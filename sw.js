@@ -1,13 +1,13 @@
-const CACHE_NAME = 'tank-gauge-v2';
+const CACHE_NAME = 'tank-gauge-v3';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './engine.js',
-  './vision.js',
-  './weather.js',
-  './charts.js',
-  './app.js',
+  './styles.css?v=3',
+  './engine.js?v=3',
+  './vision.js?v=3',
+  './weather.js?v=3',
+  './charts.js?v=3',
+  './app.js?v=3',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
@@ -17,7 +17,15 @@ const ASSETS = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.all(
+        ASSETS.map(asset =>
+          fetch(new Request(asset, { cache: 'reload' })).then(resp => {
+            if (resp && resp.ok) return cache.put(asset, resp);
+          })
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
@@ -47,10 +55,10 @@ self.addEventListener('fetch', event => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
+      fetch(new Request(event.request.url, { cache: 'no-cache' }))
         .then(response => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then(cache => cache.put('./index.html', clone));
           return response;
         })
         .catch(() => caches.match('./index.html') || caches.match('./'))
