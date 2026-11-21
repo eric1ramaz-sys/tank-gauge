@@ -507,6 +507,7 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.06s linear;
 }
 
 .reticle-overlay {
@@ -519,11 +520,11 @@ body {
 }
 
 .reticle-ring {
-  width: 78%;
-  height: 78%;
+  width: 54%;
+  height: 54%;
   border-radius: 50%;
-  border: 3px dashed rgba(245, 158, 11, 0.9);
-  box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.38);
+  border: 3px dashed rgba(245, 158, 11, 0.95);
+  box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.44);
   position: relative;
 }
 

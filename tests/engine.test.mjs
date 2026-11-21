@@ -198,3 +198,23 @@ test('7. detectDialNeedleFromRGBA hits within +-2.0% across 5 synthetic Calor di
     );
   }
 });
+
+
+test('8. detectDialNeedleFromRGBA stays within +-2.0% on low-contrast shaded Calor dials', () => {
+  const cal = TankEngine.CONSTANTS.DIAL_PRESETS.rochester_5_95;
+  const w = 360;
+  const h = 360;
+  const cx = w / 2;
+  const cy = h / 2;
+  const radius = Math.min(w, h) * 0.44;
+
+  for (const targetPct of [18, 48, 76]) {
+    const rgba = TankVision.renderSyntheticDialToRGBA(w, h, targetPct, cal, { shaded: true });
+    const result = TankVision.detectDialNeedleFromRGBA(rgba, w, h, cx, cy, radius, cal);
+    const err = Math.abs(result.percent - targetPct);
+    assert.ok(
+      err <= 2.0,
+      `Shaded dial ${targetPct}% detected as ${result.percent}% (err=${err.toFixed(2)}%, conf=${result.confidence})`
+    );
+  }
+});

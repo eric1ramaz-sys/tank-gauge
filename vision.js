@@ -64,19 +64,21 @@
     const endScan = cal.endDeg + cal.rotationDeg + 4;
     const stepDeg = 0.5;
 
-    // Sample radii inside the clean dial face (inside outer tick ring & numbers)
-    const radialSteps = [0.22, 0.27, 0.32, 0.37, 0.42, 0.47, 0.52, 0.57, 0.62, 0.67, 0.72];
-    const outerReachStartIdx = 5; // >= 0.47 * R distinguishes tip from short counterweight tail
+    // Sample 12 radial points inside the clean dial face (inside outer tick ring & numbers)
+    const radialSteps = [0.18, 0.23, 0.28, 0.33, 0.38, 0.43, 0.48, 0.53, 0.58, 0.63, 0.68, 0.72];
+    const outerReachStartIdx = 6; // >= 0.48 * R distinguishes tip from short counterweight tail
 
     const candidates = [];
 
     for (let deg = startScan; deg <= endScan + 0.001; deg += stepDeg) {
-      const rad = (deg * Math.PI) / 180;
-      const dx = Math.sin(rad);
-      const dy = -Math.cos(rad);
+      const subRays = [
+        { w: 0.25, rad: ((deg - 0.8) * Math.PI) / 180 },
+        { w: 0.5, rad: (deg * Math.PI) / 180 },
+        { w: 0.25, rad: ((deg + 0.8) * Math.PI) / 180 },
+      ].map((sr) => ({ w: sr.w, dx: Math.sin(sr.rad), dy: -Math.cos(sr.rad) }));
 
-      // Flanking angles at +-8 deg and +-14 deg for local background comparison (handles glass glare!)
-      const flankAngles = [-14, -8, 8, 14].map((offset) => {
+      // Flanking angles at +-9 deg and +-16 deg for local background comparison (handles glass glare!)
+      const flankAngles = [-16, -9, 9, 16].map((offset) => {
         const fr = ((deg + offset) * Math.PI) / 180;
         return { dx: Math.sin(fr), dy: -Math.cos(fr) };
       });
@@ -87,9 +89,16 @@
 
       for (let i = 0; i < radialSteps.length; i++) {
         const rPx = radialSteps[i] * radius;
-        const px = cx + dx * rPx;
-        const py = cy + dy * rPx;
-        const centerSample = lumaAndRed(sampleBilinear(rgbaData, width, height, px, py));
+
+        let centerLuma = 0;
+        let centerRed = 0;
+        for (let s = 0; s < subRays.length; s++) {
+          const px = cx + subRays[s].dx * rPx;
+          const py = cy + subRays[s].dy * rPx;
+          const cs = lumaAndRed(sampleBilinear(rgbaData, width, height, px, py));
+          centerLuma += cs.luma * subRays[s].w;
+          centerRed += cs.redness * subRays[s].w;
+        }
 
         let flankLumaSum = 0;
         let flankRedSum = 0;
@@ -103,26 +112,26 @@
         const flankLuma = flankLumaSum / flankAngles.length;
         const flankRed = flankRedSum / flankAngles.length;
 
-        const darkContrast = Math.max(0, flankLuma - centerSample.luma);
-        const redContrast = Math.max(0, centerSample.redness - flankRed) * 0.9;
+        const darkContrast = Math.max(0, flankLuma - centerLuma);
+        const redContrast = Math.max(0, centerRed - flankRed) * 0.9;
         const ptScore = Math.max(darkContrast, redContrast);
 
-        if (ptScore > 14) hits += 1;
+        if (ptScore > 9) hits += 1;
         if (i < outerReachStartIdx) {
           innerSum += ptScore;
         } else {
           // Outer reach weighted slightly higher so long needle tip beats short counterweight
-          outerSum += ptScore * 1.35;
+          outerSum += ptScore * 1.4;
         }
       }
 
       const consistency = hits / radialSteps.length;
-      const continuityBonus = consistency >= 0.72 ? 1.28 : consistency >= 0.5 ? 1.0 : 0.45;
+      const continuityBonus = consistency >= 0.7 ? 1.3 : consistency >= 0.45 ? 1.0 : 0.45;
       const rawScore = ((innerSum + outerSum) / radialSteps.length) * continuityBonus;
 
       // Penalise if outer reach is near zero (likely counterweight tail or logo)
       const outerAvg = outerSum / (radialSteps.length - outerReachStartIdx);
-      const score = outerAvg < 8 ? rawScore * 0.25 : rawScore;
+      const score = outerAvg < 5 ? rawScore * 0.25 : rawScore;
 
       candidates.push({ deg, score });
     }
@@ -155,9 +164,9 @@
     }
 
     const confidence =
-      bestScore <= 4
+      bestScore <= 3
         ? 0.1
-        : clamp((bestScore - secondBest) / Math.max(18, bestScore), 0.12, 0.99);
+        : clamp((bestScore - secondBest) / Math.max(10, bestScore), 0.12, 0.99);
 
     const normalizedAngle = TankEngine.normalizeAngle180(refinedAngle);
     const percent = TankEngine.angleDegToPercent(normalizedAngle, cal);
@@ -173,7 +182,9 @@
    * Pure pixel-buffer synthetic Calor Rochester dial renderer.
    * Used for Node verification tests and as base texture when needed.
    */
-  function renderSyntheticDialToRGBA(width, height, targetPercent, calibration) {
+  function renderSyntheticDialToRGBA(width, height, targetPercent, calibration, options) {
+    const opts = options || {};
+    const shaded = Boolean(opts.shaded);
     const cal = TankEngine.resolveCalibration(calibration);
     const rgba = new Uint8ClampedArray(width * height * 4);
     const cx = width / 2;
@@ -185,10 +196,19 @@
     const ny = -Math.cos(needleRad);
 
     function setPx(x, y, r, g, b) {
+      let rr = r;
+      let gg = g;
+      let bb = b;
+      if (shaded) {
+        // Simulate dim green Calor lid lighting + hazy reflection
+        rr = rr * 0.42 + 18;
+        gg = gg * 0.45 + 22;
+        bb = bb * 0.42 + 20;
+      }
       const idx = (y * width + x) * 4;
-      rgba[idx] = clamp(Math.round(r), 0, 255);
-      rgba[idx + 1] = clamp(Math.round(g), 0, 255);
-      rgba[idx + 2] = clamp(Math.round(b), 0, 255);
+      rgba[idx] = clamp(Math.round(rr), 0, 255);
+      rgba[idx + 1] = clamp(Math.round(gg), 0, 255);
+      rgba[idx + 2] = clamp(Math.round(bb), 0, 255);
       rgba[idx + 3] = 255;
     }
 
@@ -410,100 +430,213 @@
 
   /**
    * Interactive Dial Overlay Controller:
-   * Draws captured image + calibrated reticle + glowing draggable needle overlay.
+   * Supports 2-step flow: (1) Fit Dial in Ring (pan/zoom/straighten) -> (2) Confirm Needle.
    */
   class DialOverlayController {
-    constructor(canvas, onPercentChange) {
+    constructor(canvas, onPercentChange, onFitChange) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.onPercentChange = onPercentChange;
+      this.onFitChange = onFitChange || null;
+      this.rawCanvas = null;
       this.sourceCanvas = null;
       this.calibration = TankEngine.resolveCalibration(null);
       this.size = 420;
       this.cx = 210;
       this.cy = 210;
-      this.radius = 165;
+      this.radius = Math.round(420 * 0.42);
+      this.photoZoom = 1;
+      this.panX = 0;
+      this.panY = 0;
+      this.photoRotDeg = 0;
+      this.mode = 'needle'; // 'fit' | 'needle'
       this.percent = 50;
       this.angleDeg = 0;
-      this.dragMode = 'needle'; // 'needle' | 'center'
-      this.isDragging = false;
+      this._pointers = new Map();
+      this._lastPanPos = null;
+      this._pinchStartDist = 0;
+      this._pinchStartZoom = 1;
       this._bindEvents();
     }
 
     _bindEvents() {
       const getPos = (evt) => {
         const rect = this.canvas.getBoundingClientRect();
-        const scaleX = this.canvas.width / rect.width;
-        const scaleY = this.canvas.height / rect.height;
-        const pt = evt.touches ? evt.touches[0] : evt;
+        const scaleX = this.canvas.width / Math.max(1, rect.width);
+        const scaleY = this.canvas.height / Math.max(1, rect.height);
         return {
-          x: (pt.clientX - rect.left) * scaleX,
-          y: (pt.clientY - rect.top) * scaleY,
+          x: (evt.clientX - rect.left) * scaleX,
+          y: (evt.clientY - rect.top) * scaleY,
         };
       };
 
       const onDown = (evt) => {
         if (!this.sourceCanvas) return;
         evt.preventDefault();
-        this.isDragging = true;
-        onMove(evt);
-      };
-
-      const onMove = (evt) => {
-        if (!this.isDragging || !this.sourceCanvas) return;
-        evt.preventDefault();
         const pos = getPos(evt);
-        if (this.dragMode === 'center') {
-          this.cx = clamp(pos.x, this.size * 0.2, this.size * 0.8);
-          this.cy = clamp(pos.y, this.size * 0.2, this.size * 0.8);
-          this.render();
+        this._pointers.set(evt.pointerId, pos);
+
+        if (this.mode === 'fit') {
+          if (this._pointers.size === 1) {
+            this._lastPanPos = pos;
+          } else if (this._pointers.size === 2) {
+            const pts = Array.from(this._pointers.values());
+            this._pinchStartDist = Math.max(10, Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y));
+            this._pinchStartZoom = this.photoZoom;
+          }
         } else {
           const dx = pos.x - this.cx;
           const dy = pos.y - this.cy;
-          if (Math.hypot(dx, dy) < 8) return;
-          const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
-          this.setAngle(deg);
+          if (Math.hypot(dx, dy) >= 8) {
+            const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+            this.setAngle(deg);
+          }
         }
       };
 
-      const onUp = () => {
-        this.isDragging = false;
+      const onMove = (evt) => {
+        if (!this._pointers.has(evt.pointerId) || !this.sourceCanvas) return;
+        evt.preventDefault();
+        const pos = getPos(evt);
+        this._pointers.set(evt.pointerId, pos);
+
+        if (this.mode === 'fit') {
+          if (this._pointers.size >= 2) {
+            const pts = Array.from(this._pointers.values());
+            const dist = Math.max(10, Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y));
+            this.photoZoom = clamp(this._pinchStartZoom * (dist / this._pinchStartDist), 1, 6);
+            this.rebuildFittedCanvas();
+            this.render();
+            if (this.onFitChange) {
+              this.onFitChange({ zoom: this.photoZoom, rotationDeg: this.photoRotDeg });
+            }
+          } else if (this._lastPanPos) {
+            const maxPan = this.size * this.photoZoom * 0.65;
+            this.panX = clamp(this.panX + (pos.x - this._lastPanPos.x), -maxPan, maxPan);
+            this.panY = clamp(this.panY + (pos.y - this._lastPanPos.y), -maxPan, maxPan);
+            this._lastPanPos = pos;
+            this.rebuildFittedCanvas();
+            this.render();
+          }
+        } else {
+          const dx = pos.x - this.cx;
+          const dy = pos.y - this.cy;
+          if (Math.hypot(dx, dy) >= 8) {
+            const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+            this.setAngle(deg);
+          }
+        }
+      };
+
+      const onUp = (evt) => {
+        this._pointers.delete(evt.pointerId);
+        if (this.mode === 'fit' && this._pointers.size === 1) {
+          this._lastPanPos = Array.from(this._pointers.values())[0];
+        } else if (this._pointers.size === 0) {
+          this._lastPanPos = null;
+        }
       };
 
       this.canvas.addEventListener('pointerdown', onDown);
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     }
 
-    setImage(sourceCanvas, calibration, initialResult) {
+    setRawImage(sourceCanvas, calibration, opts) {
+      const options = opts || {};
       this.calibration = TankEngine.resolveCalibration(calibration);
       this.size = 420;
       this.canvas.width = this.size;
       this.canvas.height = this.size;
 
-      // Center-crop square into clean 420x420 working canvas
-      const sq = document.createElement('canvas');
-      sq.width = this.size;
-      sq.height = this.size;
-      const sw = sourceCanvas.width;
-      const sh = sourceCanvas.height;
-      const side = Math.min(sw, sh);
-      const sx = (sw - side) / 2;
-      const sy = (sh - side) / 2;
-      sq.getContext('2d').drawImage(sourceCanvas, sx, sy, side, side, 0, 0, this.size, this.size);
-      this.sourceCanvas = sq;
+      // Preserve high-res source up to 1400px longest side for crisp zooming
+      const sw = sourceCanvas.width || 420;
+      const sh = sourceCanvas.height || 420;
+      const maxEdge = Math.max(sw, sh);
+      const scale = maxEdge > 1400 ? 1400 / maxEdge : 1;
+      const rw = Math.max(1, Math.round(sw * scale));
+      const rh = Math.max(1, Math.round(sh * scale));
+      const raw = document.createElement('canvas');
+      raw.width = rw;
+      raw.height = rh;
+      raw.getContext('2d').drawImage(sourceCanvas, 0, 0, rw, rh);
+      this.rawCanvas = raw;
 
+      this.photoZoom = 1;
+      this.panX = 0;
+      this.panY = 0;
+      this.photoRotDeg = 0;
       this.cx = this.size / 2;
       this.cy = this.size / 2;
       this.radius = this.size * 0.42;
 
-      if (initialResult) {
-        this.angleDeg = initialResult.angleDeg;
-        this.percent = initialResult.percent;
-      } else {
-        this.runAutoDetect();
+      this.rebuildFittedCanvas();
+      if (this.onFitChange) {
+        this.onFitChange({ zoom: this.photoZoom, rotationDeg: this.photoRotDeg });
       }
+
+      if (options.startInFitMode) {
+        this.mode = 'fit';
+        this.render();
+      } else {
+        this.mode = 'needle';
+        if (options.initialResult) {
+          this.angleDeg = options.initialResult.angleDeg;
+          this.percent = options.initialResult.percent;
+          this.render();
+        } else {
+          this.runAutoDetect();
+        }
+      }
+    }
+
+    setImage(sourceCanvas, calibration, initialResult) {
+      this.setRawImage(sourceCanvas, calibration, { startInFitMode: false, initialResult });
+    }
+
+    rebuildFittedCanvas() {
+      if (!this.rawCanvas) return;
+      const sq = this.sourceCanvas || document.createElement('canvas');
+      sq.width = this.size;
+      sq.height = this.size;
+      const sctx = sq.getContext('2d');
+      sctx.fillStyle = '#0f172a';
+      sctx.fillRect(0, 0, this.size, this.size);
+
+      const rw = this.rawCanvas.width;
+      const rh = this.rawCanvas.height;
+      const baseScale = this.size / Math.min(rw, rh);
+      const totalScale = baseScale * this.photoZoom;
+
+      sctx.save();
+      sctx.translate(this.size / 2 + this.panX, this.size / 2 + this.panY);
+      sctx.rotate((this.photoRotDeg * Math.PI) / 180);
+      sctx.scale(totalScale, totalScale);
+      sctx.drawImage(this.rawCanvas, -rw / 2, -rh / 2);
+      sctx.restore();
+      this.sourceCanvas = sq;
+    }
+
+    setPhotoZoom(z) {
+      this.photoZoom = clamp(Number(z) || 1, 1, 6);
+      this.rebuildFittedCanvas();
       this.render();
+    }
+
+    setPhotoRotation(deg) {
+      this.photoRotDeg = clamp(Number(deg) || 0, -45, 45);
+      this.rebuildFittedCanvas();
+      this.render();
+    }
+
+    setMode(mode) {
+      this.mode = mode === 'fit' ? 'fit' : 'needle';
+      this.render();
+    }
+
+    getFittedCanvas() {
+      return this.sourceCanvas;
     }
 
     runAutoDetect() {
@@ -553,11 +686,6 @@
       if (this.onPercentChange) this.onPercentChange(this.percent);
     }
 
-    setDragMode(mode) {
-      this.dragMode = mode === 'center' ? 'center' : 'needle';
-      this.render();
-    }
-
     render() {
       const ctx = this.ctx;
       const size = this.size;
@@ -566,7 +694,47 @@
 
       ctx.drawImage(this.sourceCanvas, 0, 0);
 
-      // Subtle translucent target circle & major tick markers
+      if (this.mode === 'fit') {
+        ctx.save();
+        // Darken outer margin outside target circle using even-odd cutout
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.52)';
+        ctx.beginPath();
+        ctx.rect(0, 0, size, size);
+        ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2, true);
+        ctx.fill('evenodd');
+
+        // Crisp amber target circle
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 5]);
+        ctx.beginPath();
+        ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Center pivot crosshair
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(this.cx - 12, this.cy);
+        ctx.lineTo(this.cx + 12, this.cy);
+        ctx.moveTo(this.cx, this.cy - 12);
+        ctx.lineTo(this.cx, this.cy + 12);
+        ctx.stroke();
+
+        // Top 12 o'clock marker
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(this.cx - 34, this.cy - this.radius - 18, 68, 20);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '800 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('50% TOP', this.cx, this.cy - this.radius - 8);
+        ctx.restore();
+        return;
+      }
+
+      // Needle confirm mode: subtle translucent ring + 10% ticks + glowing needle
       ctx.save();
       ctx.strokeStyle = 'rgba(245, 158, 11, 0.72)';
       ctx.lineWidth = 2;
@@ -587,7 +755,6 @@
         ctx.stroke();
       }
 
-      // Glowing confirmation needle overlay
       const nRad = (this.angleDeg * Math.PI) / 180;
       const tipX = this.cx + Math.sin(nRad) * (this.radius * 0.92);
       const tipY = this.cy - Math.cos(nRad) * (this.radius * 0.92);
@@ -611,10 +778,9 @@
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
 
-      // Center pivot dot
       ctx.beginPath();
-      ctx.arc(this.cx, this.cy, this.dragMode === 'center' ? 9 : 6, 0, Math.PI * 2);
-      ctx.fillStyle = this.dragMode === 'center' ? '#38bdf8' : '#ffffff';
+      ctx.arc(this.cx, this.cy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 2;
@@ -625,7 +791,7 @@
   }
 
   /**
-   * Guided Camera Controller with Zoom, Torch, Tilt Level & Clean Track Release.
+   * Guided Camera Controller with Hardware+Digital Zoom, Torch, Tilt Level & Tight Ring Crop.
    */
   class CameraController {
     constructor(videoEl) {
@@ -635,12 +801,18 @@
       this.torchOn = false;
       this.onTiltUpdate = null;
       this._orientHandler = null;
+      this.hwZoomMin = 1;
+      this.hwZoomMax = 1;
+      this.hasHwZoom = false;
+      this.digitalZoom = 1;
+      this.totalZoom = 1;
+      this.ringDiameterRatio = 0.54;
     }
 
     async start() {
       this.stop();
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Live camera not available in this browser — use Upload / Take Photo below.');
+        throw new Error('Live camera not available in this browser — use Pick Saved Photo below.');
       }
       this.stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -651,24 +823,43 @@
         audio: false,
       });
       this.videoEl.srcObject = this.stream;
+      this.videoEl.style.transformOrigin = 'center center';
       await this.videoEl.play();
       this.track = this.stream.getVideoTracks()[0] || null;
       const caps = this.track && this.track.getCapabilities ? this.track.getCapabilities() : {};
+      this.hasHwZoom = Boolean(caps && caps.zoom && caps.zoom.max > 1);
+      this.hwZoomMin = this.hasHwZoom ? caps.zoom.min || 1 : 1;
+      this.hwZoomMax = this.hasHwZoom ? Math.min(5, caps.zoom.max) : 1;
+
+      await this.setZoom(2.0);
       return {
-        hasZoom: Boolean(caps && caps.zoom),
-        zoomMin: caps && caps.zoom ? caps.zoom.min : 1,
-        zoomMax: caps && caps.zoom ? Math.min(4, caps.zoom.max) : 1,
-        zoomStep: caps && caps.zoom ? caps.zoom.step || 0.1 : 0.1,
+        hasZoom: true,
+        zoomMin: 1,
+        zoomMax: 5,
+        zoomStep: 0.1,
+        defaultZoom: 2.0,
         hasTorch: Boolean(caps && caps.torch),
       };
     }
 
     async setZoom(val) {
-      if (!this.track || !this.track.applyConstraints) return;
-      try {
-        await this.track.applyConstraints({ advanced: [{ zoom: Number(val) }] });
-      } catch (_) {
-        // Ignore unsupported zoom constraints cleanly
+      const target = clamp(Number(val) || 1, 1, 5);
+      this.totalZoom = target;
+      let hwApplied = 1;
+
+      if (this.hasHwZoom && this.track && this.track.applyConstraints) {
+        hwApplied = clamp(target, this.hwZoomMin, this.hwZoomMax);
+        try {
+          await this.track.applyConstraints({ advanced: [{ zoom: hwApplied }] });
+        } catch (_) {
+          hwApplied = 1;
+        }
+      }
+
+      this.digitalZoom = Math.max(1, target / hwApplied);
+      if (this.videoEl) {
+        this.videoEl.style.transform =
+          this.digitalZoom > 1.01 ? `scale(${this.digitalZoom.toFixed(3)})` : '';
       }
     }
 
@@ -689,7 +880,6 @@
       if (this._orientHandler) window.removeEventListener('deviceorientation', this._orientHandler);
       this._orientHandler = (e) => {
         if (e.beta === null || e.gamma === null) return;
-        // Near-flat or clean perpendicular phone orientation helper
         const tiltDeg = Math.round(Math.hypot(e.gamma || 0, Math.abs(e.beta || 0) > 60 ? 90 - Math.abs(e.beta) : e.beta));
         if (this.onTiltUpdate) this.onTiltUpdate(tiltDeg);
       };
@@ -700,13 +890,15 @@
       if (!this.videoEl || !this.videoEl.videoWidth) return null;
       const vw = this.videoEl.videoWidth;
       const vh = this.videoEl.videoHeight;
-      const side = Math.min(vw, vh);
-      const sx = (vw - side) / 2;
-      const sy = (vh - side) / 2;
+      // Crop strictly around the 54% amber reticle ring so dial fills 84% of captured frame (matches overlay 1:1)
+      const visibleSide = Math.min(vw, vh) / Math.max(1, this.digitalZoom);
+      const cropSide = Math.min(vw, vh, visibleSide * (this.ringDiameterRatio / 0.84));
+      const sx = (vw - cropSide) / 2;
+      const sy = (vh - cropSide) / 2;
       const out = document.createElement('canvas');
       out.width = 640;
       out.height = 640;
-      out.getContext('2d').drawImage(this.videoEl, sx, sy, side, side, 0, 0, 640, 640);
+      out.getContext('2d').drawImage(this.videoEl, sx, sy, cropSide, cropSide, 0, 0, 640, 640);
       return out;
     }
 
@@ -721,7 +913,10 @@
         this.track = null;
         this.torchOn = false;
       }
+      this.digitalZoom = 1;
+      this.totalZoom = 1;
       if (this.videoEl) {
+        this.videoEl.style.transform = '';
         this.videoEl.srcObject = null;
       }
     }

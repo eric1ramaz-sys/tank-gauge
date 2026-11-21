@@ -183,9 +183,19 @@
 
   // Camera & Overlay instances
   const cameraCtrl = new TankVision.CameraController($('cameraVideo'));
-  const overlayCtrl = new TankVision.DialOverlayController($('dialOverlayCanvas'), (pct) => {
-    updateDetectedPctUi(pct);
-  });
+  const overlayCtrl = new TankVision.DialOverlayController(
+    $('dialOverlayCanvas'),
+    (pct) => {
+      updateDetectedPctUi(pct);
+    },
+    (fitInfo) => {
+      if (!fitInfo) return;
+      $('fitZoomSlider').value = Number(fitInfo.zoom || 1).toFixed(1);
+      $('fitZoomLbl').textContent = `${Number(fitInfo.zoom || 1).toFixed(1)}x`;
+      $('fitRotSlider').value = Math.round(fitInfo.rotationDeg || 0);
+      $('fitRotLbl').textContent = `${Math.round(fitInfo.rotationDeg || 0)}°`;
+    }
+  );
 
   function switchTab(tabName) {
     activeTab = tabName;
@@ -232,21 +242,45 @@
     return list.length ? list[list.length - 1] : null;
   }
 
-  function beginDialConfirmation(canvas, presetOverridePct) {
+  function setOverlayUiMode(mode) {
+    const isFit = mode === 'fit';
+    overlayCtrl.setMode(isFit ? 'fit' : 'needle');
+    $('btnModeFit').classList.toggle('active', isFit);
+    $('btnModeNeedle').classList.toggle('active', !isFit);
+    $('fitControlsBox').hidden = !isFit;
+    $('needleControlsBox').hidden = isFit;
+    $('confidenceBadge').hidden = isFit;
+    $('confirmCardTitle').textContent = isFit ? 'Fit Dial in Yellow Ring' : 'Confirm Needle Reading';
+    $('confirmStepHelper').innerHTML = isFit
+      ? 'Slide &amp; zoom the photo until the dial fills the yellow ring, then tap <strong>Read Needle Now</strong>.'
+      : 'Drag the glowing orange line onto your needle tip, or tap <strong>-0.5% / +0.5%</strong>.';
+  }
+
+  function updateConfidenceBadge(res) {
+    const confPct = res ? Math.round(res.confidence * 100) : 0;
+    const badge = $('confidenceBadge');
+    badge.textContent = confPct >= 55 ? `Auto Match (${confPct}%)` : `Check Line (${confPct}%)`;
+    badge.className = `status-pill ${confPct >= 55 ? 'badge-ok' : 'badge-warn'}`;
+  }
+
+  function beginDialConfirmation(canvas, opts) {
+    const options = typeof opts === 'number' ? { presetOverridePct: opts } : opts || {};
+    const startInFitMode = Boolean(options.startInFitMode);
     pendingSnapCanvas = canvas;
     $('confirmNeedleCard').hidden = false;
     $('bulkReadingDate').value = todayStr();
     $('bulkReadingNote').value = '';
 
-    overlayCtrl.setImage(canvas, state.settings.calibration, null);
-    const res = overlayCtrl.runAutoDetect();
-    const confPct = res ? Math.round(res.confidence * 100) : 0;
-    const badge = $('confidenceBadge');
-    badge.textContent = confPct >= 55 ? `Auto Match (${confPct}%)` : `Check Line (${confPct}%)`;
-    badge.className = `status-pill ${confPct >= 55 ? 'badge-ok' : 'badge-warn'}`;
-
-    if (presetOverridePct !== undefined) {
-      updateDetectedPctUi(overlayCtrl.percent);
+    overlayCtrl.setRawImage(canvas, state.settings.calibration, { startInFitMode });
+    if (startInFitMode) {
+      setOverlayUiMode('fit');
+    } else {
+      setOverlayUiMode('needle');
+      const res = overlayCtrl.runAutoDetect();
+      updateConfidenceBadge(res);
+      if (options.presetOverridePct !== undefined) {
+        updateDetectedPctUi(overlayCtrl.percent);
+      }
     }
     $('confirmNeedleCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -686,24 +720,22 @@
       $('reticleOverlay').hidden = false;
       $('btnCaptureFrame').hidden = false;
 
-      const hasAnyCtrl = caps.hasZoom || caps.hasTorch;
-      $('cameraControlsRow').hidden = !hasAnyCtrl;
-      $('zoomControlWrap').hidden = !caps.hasZoom;
-      if (caps.hasZoom) {
-        const sl = $('cameraZoomSlider');
-        sl.min = caps.zoomMin;
-        sl.max = caps.zoomMax;
-        sl.step = caps.zoomStep;
-        sl.value = caps.zoomMin;
-        $('zoomValueLabel').textContent = `${Number(caps.zoomMin).toFixed(1)}x`;
-      }
+      $('cameraControlsRow').hidden = false;
+      $('zoomControlWrap').hidden = false;
+      const sl = $('cameraZoomSlider');
+      sl.min = caps.zoomMin;
+      sl.max = caps.zoomMax;
+      sl.step = caps.zoomStep;
+      const startZoom = caps.defaultZoom || 2.0;
+      sl.value = startZoom;
+      $('zoomValueLabel').textContent = `${Number(startZoom).toFixed(1)}x`;
       $('btnToggleTorch').hidden = !caps.hasTorch;
       $('btnToggleTorch').textContent = '🔦 Light Off';
 
       cameraCtrl.startTiltSensor((tiltDeg) => {
         const badge = $('tiltBadge');
         if (tiltDeg <= 8) {
-          badge.textContent = 'Level ✓ Good angle';
+          badge.textContent = 'Level ✓ Fits ring? Tap Capture';
           badge.classList.add('flat');
         } else {
           badge.textContent = `Hold steady (${tiltDeg}° tilt)`;
@@ -711,7 +743,7 @@
         }
       });
     } catch (err) {
-      showToast(err.message || 'Camera access declined — use Upload Photo instead.');
+      showToast(err.message || 'Camera access declined — use Pick Saved Photo instead.');
     }
   });
 
@@ -747,7 +779,7 @@
         c.getContext('2d').drawImage(img, 0, 0);
         cameraCtrl.stop();
         resetCameraPlaceholder();
-        beginDialConfirmation(c);
+        beginDialConfirmation(c, { startInFitMode: true });
       };
       img.src = reader.result;
     };
@@ -778,20 +810,30 @@
     });
   });
 
+  $('btnModeFit').addEventListener('click', () => setOverlayUiMode('fit'));
+  $('btnModeNeedle').addEventListener('click', () => setOverlayUiMode('needle'));
+
+  $('fitZoomSlider').addEventListener('input', (e) => {
+    const z = Number(e.target.value) || 1;
+    $('fitZoomLbl').textContent = `${z.toFixed(1)}x`;
+    overlayCtrl.setPhotoZoom(z);
+  });
+
+  $('fitRotSlider').addEventListener('input', (e) => {
+    const deg = Number(e.target.value) || 0;
+    $('fitRotLbl').textContent = `${deg}°`;
+    overlayCtrl.setPhotoRotation(deg);
+  });
+
+  $('btnDetectFromFit').addEventListener('click', () => {
+    setOverlayUiMode('needle');
+    const res = overlayCtrl.runAutoDetect();
+    updateConfidenceBadge(res);
+    if (res) showToast(`Auto needle scan: ${res.percent.toFixed(1)}%`);
+  });
+
   $('btnNudgeDown').addEventListener('click', () => overlayCtrl.nudge(-0.5));
   $('btnNudgeUp').addEventListener('click', () => overlayCtrl.nudge(0.5));
-
-  $('btnToggleDragMode').addEventListener('click', () => {
-    const next = overlayCtrl.dragMode === 'needle' ? 'center' : 'needle';
-    overlayCtrl.setDragMode(next);
-    $('btnToggleDragMode').textContent =
-      next === 'needle' ? '🎯 Drag: Needle Tip' : '⊕ Drag: Nudge Dial Center';
-  });
-
-  $('btnReRunAutoDetect').addEventListener('click', () => {
-    const res = overlayCtrl.runAutoDetect();
-    if (res) showToast(`Auto needle re-scan: ${res.percent.toFixed(1)}%`);
-  });
 
   $('btnDiscardSnap').addEventListener('click', () => {
     pendingSnapCanvas = null;
@@ -805,8 +847,9 @@
     const pct = overlayCtrl.percent;
     let hasPhoto = false;
 
-    if (pendingSnapCanvas) {
-      const thumbUrl = TankVision.compressPhotoBlob(pendingSnapCanvas, 480, 0.82);
+    const saveCanvas = overlayCtrl.getFittedCanvas() || pendingSnapCanvas;
+    if (saveCanvas) {
+      const thumbUrl = TankVision.compressPhotoBlob(saveCanvas, 480, 0.82);
       await PhotoVault.put(id, thumbUrl);
       hasPhoto = true;
     }
