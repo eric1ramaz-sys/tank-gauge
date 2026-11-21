@@ -454,9 +454,11 @@
       this.mode = 'needle'; // 'fit' | 'needle' | 'map'
       this.percent = 50;
       this.angleDeg = 0;
-      this.MAP_STEPS = ['20', '50', '80'];
+      this.MAP_STEPS = ['PIN', '20', '50', '80'];
+      this.mapPin = null;
       this.mapMarks = [];
       this.onMapProgress = null;
+      this._activeDragPart = null; // 'center' | 'needle' | null
       this._pointers = new Map();
       this._lastPanPos = null;
       this._pinchStartDist = 0;
@@ -481,31 +483,53 @@
         const pos = getPos(evt);
 
         if (this.mode === 'map') {
-          const dx = pos.x - this.cx;
-          const dy = pos.y - this.cy;
+          if (!this.mapPin) {
+            this.mapPin = { x: pos.x, y: pos.y };
+            this.render();
+            if (this.onMapProgress) {
+              this.onMapProgress({ stepIndex: 1, targetLabel: '20', done: false });
+            }
+            return;
+          }
+
+          const dx = pos.x - this.mapPin.x;
+          const dy = pos.y - this.mapPin.y;
           if (Math.hypot(dx, dy) < 12) return;
           const angleDeg = (Math.atan2(dx, -dy) * 180) / Math.PI;
-          const label = this.MAP_STEPS[this.mapMarks.length] || '80';
+          const label = this.MAP_STEPS[this.mapMarks.length + 1] || '80';
           this.mapMarks.push({ label, x: pos.x, y: pos.y, angleDeg });
           this.render();
 
           if (this.mapMarks.length < 3) {
             if (this.onMapProgress) {
               this.onMapProgress({
-                stepIndex: this.mapMarks.length,
-                targetLabel: this.MAP_STEPS[this.mapMarks.length],
+                stepIndex: this.mapMarks.length + 1,
+                targetLabel: this.MAP_STEPS[this.mapMarks.length + 1],
                 done: false,
               });
             }
           } else {
             const marks = this.mapMarks.slice();
+            const pin = this.mapPin;
             const result = TankEngine.calibrateFromThreeMarks(
               marks[0].angleDeg,
               marks[1].angleDeg,
               marks[2].angleDeg,
               this.calibration
             );
+
+            if (result && result.ok && pin) {
+              // Auto-center the fitted photo onto the true physical needle pin
+              this.panX += this.size / 2 - pin.x;
+              this.panY += this.size / 2 - pin.y;
+              this.cx = this.size / 2;
+              this.cy = this.size / 2;
+              this.rebuildFittedCanvas();
+            }
+
             this.mode = 'needle';
+            this.mapPin = null;
+            this.mapMarks = [];
             this.render();
             if (this.onMapProgress) {
               this.onMapProgress({ done: true, result });
@@ -525,10 +549,12 @@
             this._pinchStartZoom = this.photoZoom;
           }
         } else {
-          const dx = pos.x - this.cx;
-          const dy = pos.y - this.cy;
-          if (Math.hypot(dx, dy) >= 8) {
-            const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+          const distFromCenter = Math.hypot(pos.x - this.cx, pos.y - this.cy);
+          if (distFromCenter <= 26) {
+            this._activeDragPart = 'center';
+          } else {
+            this._activeDragPart = 'needle';
+            const deg = (Math.atan2(pos.x - this.cx, -(pos.y - this.cy)) * 180) / Math.PI;
             this.setAngle(deg);
           }
         }
@@ -558,7 +584,11 @@
             this.rebuildFittedCanvas();
             this.render();
           }
-        } else {
+        } else if (this._activeDragPart === 'center') {
+          this.cx = clamp(pos.x, this.size * 0.18, this.size * 0.82);
+          this.cy = clamp(pos.y, this.size * 0.18, this.size * 0.82);
+          this.render();
+        } else if (this._activeDragPart === 'needle') {
           const dx = pos.x - this.cx;
           const dy = pos.y - this.cy;
           if (Math.hypot(dx, dy) >= 8) {
@@ -574,6 +604,12 @@
           this._lastPanPos = Array.from(this._pointers.values())[0];
         } else if (this._pointers.size === 0) {
           this._lastPanPos = null;
+        }
+        if (this.mode === 'needle' && this._activeDragPart === 'center') {
+          this._activeDragPart = null;
+          this.runAutoDetect();
+        } else {
+          this._activeDragPart = null;
         }
       };
 
@@ -675,18 +711,20 @@
       this.render();
     }
 
-    startThreeTapMap(onMapProgress) {
+    startDialMap(onMapProgress) {
       this.mode = 'map';
+      this.mapPin = null;
       this.mapMarks = [];
       this.onMapProgress = onMapProgress || null;
       this.render();
       if (this.onMapProgress) {
-        this.onMapProgress({ stepIndex: 0, targetLabel: this.MAP_STEPS[0], done: false });
+        this.onMapProgress({ stepIndex: 0, targetLabel: 'PIN', done: false });
       }
     }
 
-    cancelThreeTapMap() {
+    cancelDialMap() {
       this.mode = 'needle';
+      this.mapPin = null;
       this.mapMarks = [];
       this.render();
     }
@@ -791,28 +829,47 @@
       }
 
       if (this.mode === 'map') {
+        const pinX = this.mapPin ? this.mapPin.x : this.cx;
+        const pinY = this.mapPin ? this.mapPin.y : this.cy;
         ctx.save();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.32)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
         ctx.beginPath();
         ctx.rect(0, 0, size, size);
-        ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2, true);
+        ctx.arc(pinX, pinY, this.radius, 0, Math.PI * 2, true);
         ctx.fill('evenodd');
 
         ctx.strokeStyle = '#38bdf8';
         ctx.lineWidth = 2.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
-        ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
+        ctx.arc(pinX, pinY, this.radius, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.beginPath();
-        ctx.arc(this.cx, this.cy, 6, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        if (this.mapPin) {
+          // Crisp orange/white bullseye pin at tapped physical pivot
+          ctx.beginPath();
+          ctx.arc(this.mapPin.x, this.mapPin.y, 12, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(234, 88, 12, 0.25)';
+          ctx.fill();
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = '#fb923c';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(this.mapPin.x, this.mapPin.y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        } else {
+          // Faint guide dot before first tap
+          ctx.beginPath();
+          ctx.arc(this.cx, this.cy, 6, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.fill();
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
 
         for (let i = 0; i < this.mapMarks.length; i++) {
           const mk = this.mapMarks[i];
@@ -878,11 +935,11 @@
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.arc(this.cx, this.cy, 6, 0, Math.PI * 2);
+      ctx.arc(this.cx, this.cy, 8, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
       ctx.restore();
@@ -1021,68 +1078,6 @@
     }
   }
 
-  /**
-   * Optional Gemini Vision API scanner for bills or piped meters (requires user's own API key).
-   */
-  async function aiScanWithGemini(apiKey, imageDataUrl, scanType) {
-    if (!apiKey || !apiKey.trim()) {
-      throw new Error('Add your free Gemini API key in Settings to use AI scanning.');
-    }
-    const match = String(imageDataUrl || '').match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-    if (!match) throw new Error('Invalid image format for AI scan.');
-
-    let prompt =
-      'Extract UK Calor/LPG gas bill delivery figures. Reply with valid JSON only: {"litres": number or null, "totalPaid": number or null, "unitPricePence": number or null, "standingChargePencePerDay": number or null, "vatIncluded": boolean, "date": "YYYY-MM-DD" or null, "supplier": string or null}.';
-    if (scanType === 'meter') {
-      prompt =
-        'Read the numeric digits on this UK LPG gas meter. Reply with valid JSON only: {"readingValue": number, "unit": "m3" or "ft3"}.';
-    } else if (scanType === 'dial') {
-      prompt =
-        'Look at this Calor / LPG gas tank percentage dial. Read the printed numbers around the dial face (such as 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95), spot where the needle tip points (not the short counterweight tail), and estimate what clockwise angle in degrees from 12 o clock the 50% mark sits at (-180 to 180, 0 means 50 is straight up). Reply with valid JSON only: {"percent": number, "minMark": number or null, "maxMark": number or null, "fiftyClockDeg": number or null, "scaleNumbersSeen": [number], "confidence": "high" | "medium" | "low"}.';
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-      apiKey.trim()
-    )}`;
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: match[1], data: match[2] } },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const errTxt = await res.text();
-      throw new Error(`Gemini API returned ${res.status}: ${errTxt.slice(0, 140)}`);
-    }
-
-    const payload = await res.json();
-    const rawText =
-      payload &&
-      payload.candidates &&
-      payload.candidates[0] &&
-      payload.candidates[0].content &&
-      payload.candidates[0].content.parts &&
-      payload.candidates[0].content.parts[0] &&
-      payload.candidates[0].content.parts[0].text;
-
-    if (!rawText) throw new Error('Gemini returned an empty response.');
-    return JSON.parse(rawText);
-  }
-
   return {
     detectDialNeedleFromRGBA,
     renderSyntheticDialToRGBA,
@@ -1090,6 +1085,5 @@
     compressPhotoBlob,
     DialOverlayController,
     CameraController,
-    aiScanWithGemini,
   };
 });

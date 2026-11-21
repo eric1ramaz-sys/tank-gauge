@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=5" />
+  <link rel="stylesheet" href="./styles.css?v=6" />
 </head>
 <body>
   <div class="app-shell">
@@ -205,7 +205,7 @@
           </p>
 
           <div id="mapDialBanner" class="alert-banner alert-warn" hidden style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <span id="mapDialPrompt">Step 1 of 3: Tap the number 20 on your dial</span>
+            <span id="mapDialPrompt">Step 1 of 4: Tap the CENTRE PIN where the needle turns</span>
             <button type="button" class="btn btn-sm btn-secondary" id="btnCancelMapDial">Cancel</button>
           </div>
 
@@ -223,10 +223,7 @@
                 <input type="range" id="fitRotSlider" min="-45" max="45" step="1" value="0" />
               </div>
             </div>
-            <div class="btn-row">
-              <button type="button" class="btn btn-primary" id="btnDetectFromFit">🎯 Read Needle Now</button>
-              <button type="button" class="btn btn-secondary" id="btnAiReadDialFromFit">✨ AI Auto-Read Numbers</button>
-            </div>
+            <button type="button" class="btn btn-primary btn-block" id="btnDetectFromFit">🎯 Read Needle Now</button>
           </div>
 
           <!-- Step 2 Controls: Confirm Needle & Save -->
@@ -238,8 +235,8 @@
             </div>
 
             <div class="btn-row" style="margin-bottom:10px;">
-              <button type="button" class="btn btn-sm btn-secondary" id="btnAiReadDial">✨ AI Auto-Read</button>
-              <button type="button" class="btn btn-sm btn-secondary" id="btnStartMapDial">📍 Map My Dial (3 Taps)</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="btnStartMapDial">📍 Map My Dial</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="btnReScanNeedle">↻ Re-scan Needle</button>
             </div>
 
             <div id="refillDetectBanner" class="alert-banner alert-warn" hidden>
@@ -294,10 +291,9 @@
           </div>
           <div class="btn-row" style="margin-bottom:10px;">
             <label class="btn btn-secondary" for="meterPhotoUpload" style="margin:0;">
-              🖼️ Pick Meter Photo
+              🖼️ Pick Meter Photo (Optional)
               <input type="file" id="meterPhotoUpload" accept="image/*" hidden />
             </label>
-            <button type="button" class="btn btn-secondary" id="btnAiReadMeter">✨ AI Read Digits</button>
           </div>
           <button type="button" class="btn btn-primary btn-block" id="btnSaveMeterReading">✅ Save Meter Reading</button>
         </div>
@@ -309,13 +305,6 @@
           <div class="card-title-row">
             <h2 class="card-title">Add Calor / LPG Bill</h2>
             <button type="button" class="btn btn-sm btn-secondary" id="btnOpenTankHelper">🧮 Tank Size Helper</button>
-          </div>
-
-          <div class="btn-row" style="margin-bottom:12px;">
-            <label class="btn btn-secondary btn-sm" for="billPhotoUpload" style="margin:0;">
-              ✨ AI Scan Bill Photo
-              <input type="file" id="billPhotoUpload" accept="image/*" hidden />
-            </label>
           </div>
 
           <form id="billForm">
@@ -600,15 +589,6 @@
         </div>
       </div>
 
-      <div class="field">
-        <label for="setGeminiKey">Optional Gemini API Key (for AI Auto-Read Dial / Bill)</label>
-        <input type="password" id="setGeminiKey" placeholder="Leave blank — 100% optional" />
-        <span class="muted">
-          Stored only in this phone's browser. Offline 3-Tap Map &amp; all graphs need zero key.
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-weight:700;">Get a free Google AI key (optional)</a>
-        </span>
-      </div>
-
       <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
 
       <div class="btn-row">
@@ -683,10 +663,10 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script src="./engine.js?v=5"></script>
-  <script src="./vision.js?v=5"></script>
-  <script src="./weather.js?v=5"></script>
-  <script src="./charts.js?v=5"></script>
-  <script src="./app.js?v=5"></script>
+  <script src="./engine.js?v=6"></script>
+  <script src="./vision.js?v=6"></script>
+  <script src="./weather.js?v=6"></script>
+  <script src="./charts.js?v=6"></script>
+  <script src="./app.js?v=6"></script>
 </body>
 </html>

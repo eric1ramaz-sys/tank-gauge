@@ -126,16 +126,16 @@ def write_manifest():
 
 
 def write_service_worker():
-    sw_code = """const CACHE_NAME = 'tank-gauge-v5';
+    sw_code = """const CACHE_NAME = 'tank-gauge-v6';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=5',
-  './engine.js?v=5',
-  './vision.js?v=5',
-  './weather.js?v=5',
-  './charts.js?v=5',
-  './app.js?v=5',
+  './styles.css?v=6',
+  './engine.js?v=6',
+  './vision.js?v=6',
+  './weather.js?v=6',
+  './charts.js?v=6',
+  './app.js?v=6',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
@@ -175,7 +175,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
-  // Never hijack external API calls (Open-Meteo, postcodes.io, Gemini)
+  // Never hijack external API calls (Open-Meteo, postcodes.io)
   const reqUrl = new URL(event.request.url);
   if (reqUrl.origin !== self.location.origin) {
     return;

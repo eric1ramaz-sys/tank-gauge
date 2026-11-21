@@ -254,3 +254,30 @@ test('10. calibrateFromThreeMarks rejects out-of-order / counter-clockwise taps'
   assert.equal(bad.ok, false);
   assert.ok(bad.error.includes('clockwise'));
 });
+
+
+test('11. AI key helper cleanly removed & off-center pin geometry recovers exact calibration', () => {
+  assert.equal(TankVision.aiScanWithGemini, undefined);
+
+  const base = TankEngine.CONSTANTS.DIAL_PRESETS.rochester_5_95;
+  const trueCal = { ...base, rotationDeg: -22 };
+  const pin = { x: 232, y: 194 };
+  const r = 120;
+
+  const ptForPct = (pct) => {
+    const rad = (TankEngine.percentToAngleDeg(pct, trueCal) * Math.PI) / 180;
+    return { x: pin.x + Math.sin(rad) * r, y: pin.y - Math.cos(rad) * r };
+  };
+  const angleFromPin = (pt) => (Math.atan2(pt.x - pin.x, -(pt.y - pin.y)) * 180) / Math.PI;
+
+  const res = TankEngine.calibrateFromThreeMarks(
+    angleFromPin(ptForPct(20)),
+    angleFromPin(ptForPct(50)),
+    angleFromPin(ptForPct(80)),
+    base
+  );
+  assert.equal(res.ok, true);
+  assert.ok(Math.abs(res.calibration.rotationDeg - (-22)) <= 0.2);
+  assert.ok(Math.abs(res.calibration.startDeg - (-140)) <= 1.0);
+  assert.ok(Math.abs(res.calibration.endDeg - 140) <= 1.0);
+});

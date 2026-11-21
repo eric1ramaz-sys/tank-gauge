@@ -81,7 +81,6 @@
         locationLabel: '',
         lat: null,
         lon: null,
-        geminiApiKey: '',
         calibration: { ...TankEngine.CONSTANTS.DIAL_PRESETS.rochester_5_95 },
       },
       readings: [],
@@ -253,8 +252,8 @@
     $('mapDialBanner').hidden = !isMap;
     $('confidenceBadge').hidden = isFit || isMap;
     if (isMap) {
-      $('confirmCardTitle').textContent = 'Map Your Dial (3 Taps)';
-      $('confirmStepHelper').textContent = 'Tap the numbers 20, 50, then 80 printed on your dial.';
+      $('confirmCardTitle').textContent = 'Map Your Dial (4 Taps)';
+      $('confirmStepHelper').textContent = 'Tap the needle centre pin first, then 20, 50, and 80.';
     } else if (isFit) {
       $('confirmCardTitle').textContent = 'Fit Dial in Yellow Ring';
       $('confirmStepHelper').innerHTML =
@@ -262,7 +261,7 @@
     } else {
       $('confirmCardTitle').textContent = 'Confirm Needle Reading';
       $('confirmStepHelper').innerHTML =
-        'Drag the glowing orange line onto your needle tip, or tap <strong>-0.5% / +0.5%</strong>.';
+        'Drag the orange tip to adjust reading, or drag the <strong>white centre dot</strong> onto the needle pin.';
     }
   }
 
@@ -656,7 +655,6 @@
       settings: {
         ...defaultState().settings,
         ...demo.settings,
-        geminiApiKey: state.settings.geminiApiKey || '',
       },
       readings: demo.readings,
       bills: demo.bills,
@@ -842,67 +840,20 @@
     if (res) showToast(`Auto needle scan: ${res.percent.toFixed(1)}%`);
   });
 
-  async function runAiDialScan() {
-    if (!state.settings.geminiApiKey || !state.settings.geminiApiKey.trim()) {
-      syncSettingsModalFromState();
-      $('settingsModal').hidden = false;
-      setTimeout(() => $('setGeminiKey').focus(), 120);
-      showToast('Paste a free Google AI key in Settings to enable AI Auto-Read (or use offline 3-Tap Map).');
-      return;
-    }
-    const fitted = overlayCtrl.getFittedCanvas() || pendingSnapCanvas;
-    if (!fitted) return showToast('Snap or pick a dial photo first.');
-
-    const btnA = $('btnAiReadDial');
-    const btnB = $('btnAiReadDialFromFit');
-    const origA = btnA.textContent;
-    const origB = btnB.textContent;
-    btnA.disabled = true;
-    btnB.disabled = true;
-    btnA.textContent = '✨ Reading...';
-    btnB.textContent = '✨ Reading...';
-
-    try {
-      const dataUrl = TankVision.compressPhotoBlob(fitted, 512, 0.88);
-      const data = await TankVision.aiScanWithGemini(state.settings.geminiApiKey, dataUrl, 'dial');
-      if (!data || !Number.isFinite(Number(data.percent))) {
-        throw new Error('AI could not read a clear percentage from this photo.');
-      }
-      if (Number.isFinite(Number(data.fiftyClockDeg)) && Math.abs(Number(data.fiftyClockDeg)) > 6) {
-        state.settings.calibration.rotationDeg = TankEngine.roundTo(
-          TankEngine.normalizeAngle180(Number(data.fiftyClockDeg)),
-          1
-        );
-        saveState();
-        overlayCtrl.setCalibration(state.settings.calibration);
-      }
-      setOverlayUiMode('needle');
-      overlayCtrl.setPercent(Number(data.percent));
-      const badge = $('confidenceBadge');
-      badge.textContent = `✨ AI Read (${data.confidence || 'high'})`;
-      badge.className = 'status-pill badge-ok';
-      const seen = Array.isArray(data.scaleNumbersSeen) && data.scaleNumbersSeen.length
-        ? ` (numbers seen: ${data.scaleNumbersSeen.join(', ')})`
-        : '';
-      showToast(`AI read ${Number(data.percent).toFixed(1)}%${seen}`);
-    } catch (err) {
-      showToast(err.message);
-    } finally {
-      btnA.disabled = false;
-      btnB.disabled = false;
-      btnA.textContent = origA;
-      btnB.textContent = origB;
-    }
-  }
-
-  $('btnAiReadDial').addEventListener('click', runAiDialScan);
-  $('btnAiReadDialFromFit').addEventListener('click', runAiDialScan);
+  $('btnReScanNeedle').addEventListener('click', () => {
+    const res = overlayCtrl.runAutoDetect();
+    updateConfidenceBadge(res);
+    if (res) showToast(`Re-scanned needle: ${res.percent.toFixed(1)}%`);
+  });
 
   $('btnStartMapDial').addEventListener('click', () => {
     setOverlayUiMode('map');
-    overlayCtrl.startThreeTapMap((info) => {
+    overlayCtrl.startDialMap((info) => {
       if (!info.done) {
-        $('mapDialPrompt').textContent = `Step ${info.stepIndex + 1} of 3: Tap the number ${info.targetLabel} on your dial`;
+        $('mapDialPrompt').textContent =
+          info.targetLabel === 'PIN'
+            ? 'Step 1 of 4: Tap the CENTRE PIN where the needle turns'
+            : `Step ${info.stepIndex + 1} of 4: Tap the number ${info.targetLabel} on your dial`;
         return;
       }
       const res = info.result;
@@ -917,12 +868,12 @@
       setOverlayUiMode('needle');
       const det = overlayCtrl.runAutoDetect();
       updateConfidenceBadge(det);
-      showToast('✅ Dial mapped & saved! Future photos will match automatically.');
+      showToast('✅ Dial centred, mapped & saved!');
     });
   });
 
   $('btnCancelMapDial').addEventListener('click', () => {
-    overlayCtrl.cancelThreeTapMap();
+    overlayCtrl.cancelDialMap();
     setOverlayUiMode('needle');
   });
 
@@ -970,57 +921,48 @@
     }
   });
 
-  // Piped meter save + optional AI
+  // Piped meter save
   $('meterReadingDate').value = todayStr();
-  $('btnSaveMeterReading').addEventListener('click', () => {
+  let meterPhotoDataUrl = null;
+  $('btnSaveMeterReading').addEventListener('click', async () => {
     const val = Number($('meterValueInput').value);
     if (!Number.isFinite(val) || val < 0) {
       return showToast('Enter a valid meter reading number.');
     }
+    const id = 'm_' + Date.now();
     const dateVal = $('meterReadingDate').value || todayStr();
+    let hasPhoto = false;
+    if (meterPhotoDataUrl) {
+      await PhotoVault.put(id, meterPhotoDataUrl);
+      hasPhoto = true;
+    }
     state.readings.push({
-      id: 'm_' + Date.now(),
+      id,
       date: dateVal,
       timestamp: dateVal === todayStr() ? new Date().toISOString() : `${dateVal}T12:00:00Z`,
       meterValue: val,
       meterUnit: state.settings.meterUnit,
+      hasPhoto,
       note: $('meterReadingNote').value.trim(),
     });
     saveState();
+    meterPhotoDataUrl = null;
     $('meterValueInput').value = '';
     $('meterReadingNote').value = '';
     showToast(`Saved meter reading: ${val} ${state.settings.meterUnit}`);
     switchTab('dashboard');
   });
 
-  let meterPhotoDataUrl = null;
   $('meterPhotoUpload').addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     const r = new FileReader();
     r.onload = () => {
       meterPhotoDataUrl = r.result;
-      showToast('Meter photo attached — tap AI Read Digits or type value.');
+      showToast('Meter photo attached — enter reading & save.');
     };
     r.readAsDataURL(f);
-  });
-
-  $('btnAiReadMeter').addEventListener('click', async () => {
-    if (!meterPhotoDataUrl) return showToast('Snap or attach a meter photo first.');
-    try {
-      showToast('Reading meter with Gemini...');
-      const data = await TankVision.aiScanWithGemini(
-        state.settings.geminiApiKey,
-        meterPhotoDataUrl,
-        'meter'
-      );
-      if (data && Number.isFinite(Number(data.readingValue))) {
-        $('meterValueInput').value = data.readingValue;
-        showToast(`AI read: ${data.readingValue}`);
-      }
-    } catch (err) {
-      showToast(err.message);
-    }
+    e.target.value = '';
   });
 
   // Bills form & Live Total <-> p/L sync
@@ -1079,37 +1021,6 @@
     $('billNote').value = '';
     renderAll();
     showToast('Gas bill saved!');
-  });
-
-  $('billPhotoUpload').addEventListener('change', (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        showToast('Scanning bill with Gemini...');
-        const data = await TankVision.aiScanWithGemini(
-          state.settings.geminiApiKey,
-          reader.result,
-          'bill'
-        );
-        if (data.litres) $('billLitres').value = data.litres;
-        if (data.totalPaid) $('billTotalPaid').value = data.totalPaid;
-        if (data.unitPricePence) $('billUnitPrice').value = data.unitPricePence;
-        if (data.standingChargePerDay || data.standingChargePencePerDay) {
-          $('billStandingCharge').value =
-            data.standingChargePencePerDay || data.standingChargePerDay;
-        }
-        if (data.date) $('billDate').value = data.date;
-        if (data.supplier) $('billSupplier').value = data.supplier;
-        if (typeof data.vatIncluded === 'boolean') $('billVatIncluded').checked = data.vatIncluded;
-        showToast('Bill fields populated — please double-check & save.');
-      } catch (err) {
-        showToast(err.message);
-      }
-    };
-    reader.readAsDataURL(f);
-    e.target.value = '';
   });
 
   // Tank size helper modal
@@ -1178,7 +1089,6 @@
     $('setDialSpan').value = span;
     $('spanValLbl').textContent = `±${span}°`;
     $('setLocationQuery').value = s.locationQuery || '';
-    $('setGeminiKey').value = s.geminiApiKey || '';
     $('btnToggleDemoSettings').textContent = state.isDemo ? '🧹 Clear Sample Data' : '✨ Load Sample Data';
   }
 
@@ -1231,12 +1141,6 @@
     state.settings.calibration.endDeg = span;
     overlayCtrl.setCalibration(state.settings.calibration);
     saveState();
-  });
-
-  $('setGeminiKey').addEventListener('change', () => {
-    state.settings.geminiApiKey = $('setGeminiKey').value.trim();
-    saveState();
-    showToast('Optional Gemini API key saved in browser.');
   });
 
   $('btnSaveLocation').addEventListener('click', async () => {
