@@ -126,7 +126,7 @@ def write_manifest():
 
 
 def write_service_worker():
-    sw_code = """const CACHE_NAME = 'tank-gauge-v1';
+    sw_code = """const CACHE_NAME = 'tank-gauge-v2';
 const ASSETS = [
   './',
   './index.html',

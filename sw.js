@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tank-gauge-v1';
+const CACHE_NAME = 'tank-gauge-v2';
 const ASSETS = [
   './',
   './index.html',

@@ -74,26 +74,18 @@
   }
 
   function resolveCalibration(calibration) {
+    const c = calibration && typeof calibration === 'object' ? calibration : {};
     const preset =
-      (calibration && calibration.presetId && CONSTANTS.DIAL_PRESETS[calibration.presetId]) ||
+      (c.presetId && CONSTANTS.DIAL_PRESETS[c.presetId]) ||
       CONSTANTS.DIAL_PRESETS.rochester_5_95;
+    const hasNum = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
     return {
-      presetId: (calibration && calibration.presetId) || preset.id,
-      minPct: Number.isFinite(Number(calibration && calibration.minPct))
-        ? Number(calibration.minPct)
-        : preset.minPct,
-      maxPct: Number.isFinite(Number(calibration && calibration.maxPct))
-        ? Number(calibration.maxPct)
-        : preset.maxPct,
-      startDeg: Number.isFinite(Number(calibration && calibration.startDeg))
-        ? Number(calibration.startDeg)
-        : preset.startDeg,
-      endDeg: Number.isFinite(Number(calibration && calibration.endDeg))
-        ? Number(calibration.endDeg)
-        : preset.endDeg,
-      rotationDeg: Number.isFinite(Number(calibration && calibration.rotationDeg))
-        ? Number(calibration.rotationDeg)
-        : preset.rotationDeg,
+      presetId: c.presetId || preset.id,
+      minPct: hasNum(c.minPct) ? Number(c.minPct) : preset.minPct,
+      maxPct: hasNum(c.maxPct) ? Number(c.maxPct) : preset.maxPct,
+      startDeg: hasNum(c.startDeg) ? Number(c.startDeg) : preset.startDeg,
+      endDeg: hasNum(c.endDeg) ? Number(c.endDeg) : preset.endDeg,
+      rotationDeg: hasNum(c.rotationDeg) ? Number(c.rotationDeg) : preset.rotationDeg,
     };
   }
 

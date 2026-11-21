@@ -7,6 +7,11 @@ const TankEngine = require('../engine.js');
 const TankVision = require('../vision.js');
 
 test('1. angleDegToPercent & percentToAngleDeg round-trip across presets and rotation', () => {
+  const defFromNull = TankEngine.resolveCalibration(null);
+  assert.equal(defFromNull.minPct, 5);
+  assert.equal(defFromNull.maxPct, 95);
+  assert.equal(TankEngine.resolveCalibration(undefined).presetId, 'rochester_5_95');
+
   const rochester = TankEngine.CONSTANTS.DIAL_PRESETS.rochester_5_95;
   for (const pct of [5, 18, 25, 50, 72.5, 95]) {
     const deg = TankEngine.percentToAngleDeg(pct, rochester);
