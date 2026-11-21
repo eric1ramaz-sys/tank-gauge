@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Install TankGauge on Your Phone</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px 16px;
+      background: #f4f6f9;
+      color: #0f172a;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+    }
+    .card {
+      max-width: 780px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 2px solid #ea580c;
+      border-radius: 22px;
+      padding: 28px 24px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
+    }
+    .hero {
+      text-align: center;
+      border-bottom: 1px solid #cbd5e1;
+      padding-bottom: 20px;
+      margin-bottom: 22px;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(234, 88, 12, 0.12);
+      color: #ea580c;
+      border: 1px solid #ea580c;
+      border-radius: 99px;
+      padding: 4px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    h1 { margin: 10px 0 6px; font-size: 28px; }
+    .subtitle { margin: 0; color: #475569; font-size: 16px; }
+    .qr-box {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .qr-frame {
+      display: inline-block;
+      background: #ffffff;
+      padding: 14px;
+      border: 4px solid #0f172a;
+      border-radius: 18px;
+    }
+    .qr-frame img { width: 260px; height: 260px; display: block; }
+    .url-pill {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 10px 16px;
+      background: #0f172a;
+      color: #fbbf24;
+      border-radius: 10px;
+      font-weight: 700;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .box {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .box h2 { margin: 0 0 8px; font-size: 17px; color: #0f172a; }
+    ol { margin: 0; padding-left: 20px; }
+    li { margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="hero">
+      <span class="badge">Built for Calor Gas &amp; UK LPG</span>
+      <h1>TankGauge — Phone Install Card</h1>
+      <p class="subtitle">Works outdoors by your tank even with your PC switched off. Zero App Store, zero monthly fees.</p>
+    </div>
+
+    <div class="qr-box">
+      <div class="qr-frame">
+        <img src="./qr_tank_gauge.png" alt="Scan to open TankGauge" />
+      </div>
+      <div>
+        <a class="url-pill" href="https://eric1ramaz-sys.github.io/tank-gauge/" target="_blank" rel="noopener">https://eric1ramaz-sys.github.io/tank-gauge/</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="box">
+        <h2>Android (Redmi / Chrome)</h2>
+        <ol>
+          <li>Point your phone camera at the QR code above and tap the link.</li>
+          <li>In Chrome, tap the <strong>⋮ menu</strong> at top-right.</li>
+          <li>Tap <strong>Add to Home screen</strong> &rarr; <strong>Install</strong>.</li>
+        </ol>
+      </div>
+      <div class="box">
+        <h2>iPhone / iPad (Safari)</h2>
+        <ol>
+          <li>Point the iPhone camera at the QR code and open in <strong>Safari</strong>.</li>
+          <li>Tap the <strong>Share</strong> button (square with arrow pointing up).</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>30-Second Quick Start</h2>
+      <ol>
+        <li>Open TankGauge and tap <strong>Try Sample Data</strong> if you want to explore the graphs and advisor indoors first.</li>
+        <li>Tap <strong>Settings ⚙️</strong> to confirm your tank size (or use <strong>Bills &rarr; Tank Size Helper</strong>) and enter your UK postcode for free weather overlay.</li>
+        <li>Head out to your Calor tank, tap <strong>Snap Dial</strong>, align the ring around the dial, confirm the glowing needle line, and log your last Calor bill!</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>

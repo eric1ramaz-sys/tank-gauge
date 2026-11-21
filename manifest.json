@@ -1,0 +1,25 @@
+{
+  "name": "TankGauge \u2014 Calor & UK LPG Tracker",
+  "short_name": "TankGauge",
+  "description": "Snap your Calor tank dial, track real daily & monthly \u00a3 spend, and cut LPG heating bills.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F4F6F9",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

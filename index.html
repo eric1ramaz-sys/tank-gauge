@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en-GB" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F172A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>TankGauge — Calor & UK LPG Tracker</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="brand-wrap">
+        <img src="./icon-192.png" alt="TankGauge" class="brand-icon" />
+        <div>
+          <h1 class="brand-title">TankGauge</h1>
+          <p class="brand-sub">Built for Calor Gas bulk tanks &amp; UK LPG meters</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="icon-btn" id="btnThemeToggle" title="Toggle Daylight / Dark Mode" aria-label="Toggle theme">🌙</button>
+        <button type="button" class="icon-btn" id="btnOpenShare" title="Share QR Code" aria-label="Share app QR">QR</button>
+        <button type="button" class="icon-btn" id="btnOpenSettings" title="Settings" aria-label="Open settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Demo Ribbon -->
+    <div id="demoRibbon" class="demo-ribbon" hidden>
+      <span>Demo Mode Active (Aberdeenshire Sample)</span>
+      <button type="button" id="btnClearDemoTop">Clear &amp; Use My Tank</button>
+    </div>
+
+    <main class="main-content">
+      <!-- ==================== TAB 1: DASHBOARD ==================== -->
+      <section id="tab-dashboard" class="tab-panel active">
+        <div id="welcomeCard" class="card welcome-card" hidden>
+          <h2 class="card-title">Welcome to TankGauge</h2>
+          <p class="muted" style="margin:6px 0 12px;">
+            Snap a close-up photo of your Calor tank dial, log your last gas bill, and track your real daily &amp; monthly £ cost — completely private on your phone.
+          </p>
+          <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="btnTryDemo">✨ Try Sample Data</button>
+            <button type="button" class="btn btn-secondary" id="btnStartFirstSnap">📷 Snap Your First Dial</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div id="heroGaugeContainer"></div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-pill">
+            <div class="kpi-val" id="kpiDailyCost">—</div>
+            <div class="kpi-lbl">£ / Day</div>
+            <div class="kpi-sub" id="kpiLitresDay">— L/day</div>
+          </div>
+          <div class="kpi-pill">
+            <div class="kpi-val" id="kpiMonthlyCost">—</div>
+            <div class="kpi-lbl">Est. Month</div>
+            <div class="kpi-sub" id="kpiKwhDay">— kWh/day</div>
+          </div>
+          <div class="kpi-pill">
+            <div class="kpi-val" id="kpiCurrentPpl">—</div>
+            <div class="kpi-lbl">Current p/L</div>
+            <div class="kpi-sub" id="kpiPplDelta">UK VAT inc.</div>
+          </div>
+        </div>
+
+        <!-- Usage & Weather Graph -->
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Consumption &amp; Weather</h2>
+            <div class="seg-group" id="granularityToggle">
+              <button type="button" class="seg-btn active" data-gran="daily">Daily</button>
+              <button type="button" class="seg-btn" data-gran="monthly">Monthly</button>
+            </div>
+          </div>
+          <div class="seg-bar">
+            <div class="seg-group" id="metricToggle">
+              <button type="button" class="seg-btn active" data-metric="cost">£ Cost</button>
+              <button type="button" class="seg-btn" data-metric="litres">Litres</button>
+              <button type="button" class="seg-btn" data-metric="kwh">kWh</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" id="btnToggleWeatherOverlay">🌡️ °C On</button>
+          </div>
+
+          <div class="chart-box">
+            <canvas id="consumptionChartCanvas"></canvas>
+          </div>
+          <div id="chartTooltip" class="chart-tooltip" hidden></div>
+          <div class="chart-legend">
+            <span><i class="dot" style="background:var(--accent);"></i>LPG Usage</span>
+            <span><i class="dot" style="background:var(--sky);"></i>Outside Temp (°C)</span>
+            <span><i class="dot" style="background:var(--ok);"></i>★ Heating Upgrade</span>
+          </div>
+        </div>
+
+        <!-- Local Weather Insight -->
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Weather-Adjusted Check</h2>
+            <button type="button" class="btn btn-sm btn-secondary" id="btnRefreshWeather">↻ Sync Weather</button>
+          </div>
+          <div class="weather-box">
+            <div>
+              <strong id="weatherLocationLabel">Location not set</strong>
+              <p id="weatherInsightText" class="muted" style="margin:4px 0 0;">
+                Set your UK postcode in Settings to compare gas usage against outside temperatures.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calor Price Watchdog Summary -->
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Calor Price Watchdog</h2>
+            <span id="watchdogBadge" class="status-pill badge-muted">—</span>
+          </div>
+          <p id="watchdogSummaryText" class="muted" style="margin:0;">
+            Enter your latest Calor bill to benchmark your pence-per-litre against UK bulk LPG bands.
+          </p>
+        </div>
+
+        <!-- Reading History -->
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Recent Dial Readings</h2>
+            <span class="muted" id="readingCountLabel">0 logged</span>
+          </div>
+          <div id="readingHistoryList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: SNAP DIAL ==================== -->
+      <section id="tab-snap" class="tab-panel">
+        <!-- Bulk Tank Guided Camera Card -->
+        <div class="card" id="bulkCameraCard">
+          <div class="card-title-row">
+            <h2 class="card-title">Guided Calor Dial Snap</h2>
+            <span class="muted">Hold phone flat above dial</span>
+          </div>
+
+          <div class="camera-stage" id="cameraStage">
+            <video id="cameraVideo" class="camera-video" playsinline muted hidden></video>
+            <div class="reticle-overlay" id="reticleOverlay" hidden>
+              <div class="reticle-ring">
+                <span class="reticle-top-mark">12 O'CLOCK (50%)</span>
+              </div>
+              <div id="tiltBadge" class="tilt-badge">Align ring around dial</div>
+            </div>
+            <div id="cameraPlaceholder" class="camera-placeholder">
+              <div style="font-size:2rem;">📷</div>
+              <div><strong>Tap below to open your rear camera</strong><br /><span style="font-size:0.84rem;opacity:0.85;">Or upload a photo / test with a sample dial indoors</span></div>
+              <button type="button" class="btn btn-primary" id="btnStartCamera">Start Live Camera</button>
+            </div>
+          </div>
+
+          <div id="cameraControlsRow" class="field-grid" style="margin-top:10px;" hidden>
+            <div class="field" id="zoomControlWrap" style="margin-bottom:0;" hidden>
+              <label for="cameraZoomSlider">Zoom (<span id="zoomValueLabel">1.0x</span>)</label>
+              <input type="range" id="cameraZoomSlider" min="1" max="3" step="0.1" value="1" />
+            </div>
+            <div style="display:flex;align-items:flex-end;gap:8px;">
+              <button type="button" class="btn btn-secondary btn-block" id="btnToggleTorch" hidden>🔦 Light Off</button>
+            </div>
+          </div>
+
+          <div class="btn-row" style="margin-top:12px;">
+            <button type="button" class="btn btn-primary" id="btnCaptureFrame" hidden>📸 Capture Dial</button>
+            <label class="btn btn-secondary" for="dialPhotoUpload" style="margin:0;">
+              🖼️ Upload / Take Photo
+              <input type="file" id="dialPhotoUpload" accept="image/*" capture="environment" hidden />
+            </label>
+            <button type="button" class="btn btn-secondary" id="btnTestSampleDial">🎯 Test Sample Dial</button>
+          </div>
+          <div id="samplePresetBar" class="seg-bar" style="margin-top:8px;" hidden>
+            <span class="muted" style="align-self:center;margin-right:4px;">Test dial at:</span>
+            <button type="button" class="btn btn-sm btn-secondary sample-dial-btn" data-pct="22">22% (Low)</button>
+            <button type="button" class="btn btn-sm btn-secondary sample-dial-btn" data-pct="48">48%</button>
+            <button type="button" class="btn btn-sm btn-secondary sample-dial-btn" data-pct="76">76%</button>
+          </div>
+        </div>
+
+        <!-- Bulk Needle Confirmation Card -->
+        <div class="card" id="confirmNeedleCard" hidden>
+          <div class="card-title-row">
+            <h2 class="card-title">Confirm Needle Reading</h2>
+            <span id="confidenceBadge" class="status-pill badge-ok">Auto Match</span>
+          </div>
+          <p class="muted" style="margin:0 0 8px;">
+            Drag the glowing orange line to match your needle tip, or tap <strong>-0.5% / +0.5%</strong>.
+          </p>
+
+          <canvas id="dialOverlayCanvas" class="overlay-canvas"></canvas>
+
+          <div class="nudge-row">
+            <button type="button" class="btn btn-secondary" id="btnNudgeDown">−0.5%</button>
+            <div class="detected-pct-readout" id="detectedPctDisplay">50.0%</div>
+            <button type="button" class="btn btn-secondary" id="btnNudgeUp">+0.5%</button>
+          </div>
+
+          <div class="btn-row" style="margin-bottom:10px;">
+            <button type="button" class="btn btn-sm btn-secondary" id="btnToggleDragMode">🎯 Drag: Needle Tip</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btnReRunAutoDetect">↻ Re-scan Photo</button>
+          </div>
+
+          <div id="refillDetectBanner" class="alert-banner alert-warn" hidden>
+            🚚 Tank level jumped up — looks like a Calor refill! We won't count this jump as gas burned.
+            <label class="checkbox-row" style="margin-top:4px;min-height:32px;">
+              <input type="checkbox" id="chkReadingIsRefill" checked />
+              <span>Mark as Tank Refill Delivery</span>
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="bulkReadingDate">Date</label>
+              <input type="date" id="bulkReadingDate" />
+            </div>
+            <div class="field">
+              <label>Estimated Tank Vol.</label>
+              <input type="text" id="bulkReadingLitresPreview" readonly />
+            </div>
+          </div>
+          <div class="field">
+            <label for="bulkReadingNote">Note (optional)</label>
+            <input type="text" id="bulkReadingNote" placeholder="e.g. Frosty morning check" />
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="btnSaveBulkReading">✅ Save Reading</button>
+            <button type="button" class="btn btn-secondary" id="btnDiscardSnap">Retake</button>
+          </div>
+        </div>
+
+        <!-- Piped Meter Mode Card -->
+        <div class="card" id="meterSnapCard" hidden>
+          <div class="card-title-row">
+            <h2 class="card-title">Log Piped LPG Meter</h2>
+            <span class="muted" id="meterUnitBadge">m³</span>
+          </div>
+          <div class="field">
+            <label for="meterValueInput">Current Meter Reading (<span id="meterUnitLabel">m³</span>)</label>
+            <input type="number" step="0.01" id="meterValueInput" placeholder="e.g. 1428.50" />
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="meterReadingDate">Date</label>
+              <input type="date" id="meterReadingDate" />
+            </div>
+            <div class="field">
+              <label for="meterReadingNote">Note (optional)</label>
+              <input type="text" id="meterReadingNote" placeholder="e.g. Box check" />
+            </div>
+          </div>
+          <div class="btn-row" style="margin-bottom:10px;">
+            <label class="btn btn-secondary" for="meterPhotoUpload" style="margin:0;">
+              📸 Snap Meter Photo
+              <input type="file" id="meterPhotoUpload" accept="image/*" capture="environment" hidden />
+            </label>
+            <button type="button" class="btn btn-secondary" id="btnAiReadMeter">✨ AI Read Digits</button>
+          </div>
+          <button type="button" class="btn btn-primary btn-block" id="btnSaveMeterReading">✅ Save Meter Reading</button>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 3: BILLS ==================== -->
+      <section id="tab-bills" class="tab-panel">
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Add Calor / LPG Bill</h2>
+            <button type="button" class="btn btn-sm btn-secondary" id="btnOpenTankHelper">🧮 Tank Size Helper</button>
+          </div>
+
+          <div class="btn-row" style="margin-bottom:12px;">
+            <label class="btn btn-secondary btn-sm" for="billPhotoUpload" style="margin:0;">
+              ✨ AI Scan Bill Photo
+              <input type="file" id="billPhotoUpload" accept="image/*" hidden />
+            </label>
+          </div>
+
+          <form id="billForm">
+            <div class="field-grid">
+              <div class="field">
+                <label for="billDate">Delivery / Bill Date</label>
+                <input type="date" id="billDate" required />
+              </div>
+              <div class="field">
+                <label for="billSupplier">Supplier</label>
+                <input type="text" id="billSupplier" value="Calor Gas" />
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="billLitres" id="billQtyLabel">Litres Delivered</label>
+                <input type="number" step="0.1" min="1" id="billLitres" placeholder="e.g. 1000" required />
+              </div>
+              <div class="field">
+                <label for="billUnitType">Unit</label>
+                <select id="billUnitType">
+                  <option value="litres">Litres (Bulk Tank)</option>
+                  <option value="m3">m³ (Piped Meter)</option>
+                  <option value="ft3">ft³ (Imperial Meter)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="billTotalPaid">Total Paid (£)</label>
+                <input type="number" step="0.01" min="0" id="billTotalPaid" placeholder="e.g. 650.00" />
+              </div>
+              <div class="field">
+                <label for="billUnitPrice">OR Unit Price (p/L)</label>
+                <input type="number" step="0.01" min="0" id="billUnitPrice" placeholder="e.g. 65.0" />
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="billStandingCharge">Standing Charge (p/day)</label>
+                <input type="number" step="0.1" min="0" id="billStandingCharge" value="23.0" />
+              </div>
+              <div class="field" style="justify-content:flex-end;">
+                <label class="checkbox-row">
+                  <input type="checkbox" id="billVatIncluded" checked />
+                  <span>Prices include 5% UK VAT</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="billNote">Note (optional)</label>
+              <input type="text" id="billNote" placeholder="e.g. Autumn top-up" />
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">💾 Save Gas Bill</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Price per Litre Trend (inc. 5% VAT)</h2>
+            <span class="muted">Green = Typical UK 55–68p/L</span>
+          </div>
+          <div class="chart-box">
+            <canvas id="priceTrendCanvas"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Saved Bills</h2>
+            <span class="muted" id="billCountLabel">0 bills</span>
+          </div>
+          <div id="billHistoryList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: ADVISOR ==================== -->
+      <section id="tab-advisor" class="tab-panel">
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Your Home &amp; Heater Setup</h2>
+            <span class="muted">6 quick taps</span>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="profHomeType">Home Type</label>
+              <select id="profHomeType">
+                <option value="park_home">Park Home / Lodge</option>
+                <option value="stone_cottage">Stone / Rural Cottage</option>
+                <option value="detached_modern">Detached House</option>
+                <option value="semi_terrace">Semi / Terrace</option>
+                <option value="bungalow">Bungalow</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="profHeaterType">Heater / Boiler</label>
+              <select id="profHeaterType">
+                <option value="condensing_combi">Modern Condensing Combi</option>
+                <option value="system_tank">System Boiler + Water Tank</option>
+                <option value="old_boiler">Older Non-Condensing Boiler</option>
+                <option value="warm_air">Warm-Air Gas Heater</option>
+                <option value="gas_fires">Gas Fires / Convector</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="profControls">Controls</label>
+              <select id="profControls">
+                <option value="smart_trv">Smart Stat + Room TRVs</option>
+                <option value="programmer_stat">Timer + Room Stat</option>
+                <option value="basic_on_off">Basic On/Off Only</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="profFlowTemp">Radiator Temp Setting</label>
+              <select id="profFlowTemp">
+                <option value="high_70plus">High (70–80°C / Default)</option>
+                <option value="medium_60_70">Medium (61–69°C)</option>
+                <option value="low_under_60">Low (55–60°C / Condensing)</option>
+                <option value="unknown">Not Sure</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="profInsulation">Insulation Level</label>
+              <select id="profInsulation">
+                <option value="poor">Draughty / Older</option>
+                <option value="average">Average Double Glazed</option>
+                <option value="good">Well Insulated</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="profRegion">UK Region (Grants)</label>
+              <select id="profRegion">
+                <option value="scotland">Scotland</option>
+                <option value="england_wales">England &amp; Wales</option>
+                <option value="ni">Northern Ireland</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Savings Summary -->
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title">Tailored Annual Savings</h2>
+            <span id="adviceBasisBadge" class="status-pill badge-muted">Estimated</span>
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi-pill">
+              <div class="kpi-val" style="color:var(--ok);" id="advImplementedVal">£0</div>
+              <div class="kpi-lbl">Saved / Yr</div>
+            </div>
+            <div class="kpi-pill">
+              <div class="kpi-val" style="color:var(--accent);" id="advRemainingVal">£0</div>
+              <div class="kpi-lbl">Still Available</div>
+            </div>
+            <div class="kpi-pill">
+              <div class="kpi-val" id="advBaselineVal">£1,450</div>
+              <div class="kpi-lbl">Est. Yearly Gas</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title" style="margin-bottom:10px;">1. £0 Quick Wins Today</h2>
+          <div id="tipsQuickWins" class="list-stack"></div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title" style="margin-bottom:10px;">2. Low-Cost Tweaks (£15–£250)</h2>
+          <div id="tipsLowCost" class="list-stack"></div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title" style="margin-bottom:10px;">3. Major Upgrades &amp; UK Grants</h2>
+          <div id="tipsMajorUpgrades" class="list-stack"></div>
+          <div id="grantLinksBox" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Tab Bar -->
+    <nav class="bottom-nav" aria-label="Primary navigation">
+      <button type="button" class="nav-btn active" data-tab="dashboard">
+        <span class="nav-ico">📊</span><span>Dashboard</span>
+      </button>
+      <button type="button" class="nav-btn" data-tab="snap">
+        <span class="nav-ico">📷</span><span>Snap Dial</span>
+      </button>
+      <button type="button" class="nav-btn" data-tab="bills">
+        <span class="nav-ico">🧾</span><span>Bills</span>
+      </button>
+      <button type="button" class="nav-btn" data-tab="advisor">
+        <span class="nav-ico">🔥</span><span>Advisor</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ==================== SETTINGS MODAL ==================== -->
+  <div id="settingsModal" class="modal-backdrop" hidden>
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h2 class="card-title">TankGauge Settings</h2>
+        <button type="button" class="btn btn-sm btn-secondary" data-close-modal="settingsModal">✕ Close</button>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="setMode">Gas Setup Mode</label>
+          <select id="setMode">
+            <option value="bulk">Bulk Calor Tank (% Dial)</option>
+            <option value="meter">Piped LPG Meter (m³ / ft³)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="setTankCapacity">Tank Size (Litres)</label>
+          <select id="setTankCapacity">
+            <option value="1200">1,200 L (Standard Small)</option>
+            <option value="1410">1,410 L (Above Ground)</option>
+            <option value="2000">2,000 L (Medium)</option>
+            <option value="2200">2,200 L (Calor Medium)</option>
+            <option value="2400">2,400 L (Large)</option>
+            <option value="4000">4,000 L (Extra Large)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="setReorderPct">Reorder Alert (%)</label>
+          <input type="number" min="10" max="45" id="setReorderPct" value="25" />
+        </div>
+        <div class="field">
+          <label for="setMeterUnit">Piped Meter Unit</label>
+          <select id="setMeterUnit">
+            <option value="m3">m³ (Metric)</option>
+            <option value="ft3">ft³ (Imperial)</option>
+            <option value="litres">Litres</option>
+          </select>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+
+      <div class="field">
+        <label for="setDialPreset">Dial Scale Preset</label>
+        <select id="setDialPreset">
+          <option value="rochester_5_95">Calor Rochester (5%–95%, ±140°)</option>
+          <option value="rochester_0_90">Rochester Standard (0%–90%, ±135°)</option>
+          <option value="srg_10_90">SRG / Magnetel (10%–90%, ±135°)</option>
+        </select>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label for="setDialRotation">Dial Rotation Offset (°): <span id="rotValLbl">0°</span></label>
+          <input type="range" id="setDialRotation" min="-25" max="25" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label for="setDialSpan">Needle Sweep (°): <span id="spanValLbl">±140°</span></label>
+          <input type="range" id="setDialSpan" min="115" max="155" step="1" value="140" />
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+
+      <div class="field">
+        <label for="setLocationQuery">UK Postcode or Town (for free local weather)</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="setLocationQuery" placeholder="e.g. AB51 0YX or Kintore" />
+          <button type="button" class="btn btn-secondary" id="btnSaveLocation">Find &amp; Sync</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="setGeminiKey">Optional Gemini API Key (only for AI Bill/Meter Scan)</label>
+        <input type="password" id="setGeminiKey" placeholder="Leave blank — 100% optional" />
+        <span class="muted">Stored only in this phone's browser. Dial reading &amp; all graphs need zero key.</span>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+
+      <div class="btn-row">
+        <button type="button" class="btn btn-sm btn-secondary" id="btnExportJson">⬇️ Backup JSON</button>
+        <button type="button" class="btn btn-sm btn-secondary" id="btnExportCsv">📄 Export CSV</button>
+        <label class="btn btn-sm btn-secondary" for="importJsonInput" style="margin:0;">
+          ⬆️ Restore JSON
+          <input type="file" id="importJsonInput" accept=".json,application/json" hidden />
+        </label>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button type="button" class="btn btn-sm btn-secondary" id="btnToggleDemoSettings">✨ Load Sample Data</button>
+        <button type="button" class="btn btn-sm btn-danger" id="btnResetAll">🗑️ Reset All Data</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SHARE QR MODAL ==================== -->
+  <div id="shareModal" class="modal-backdrop" hidden>
+    <div class="modal-sheet" style="text-align:center;">
+      <div class="modal-head">
+        <h2 class="card-title">Install / Share TankGauge</h2>
+        <button type="button" class="btn btn-sm btn-secondary" data-close-modal="shareModal">✕ Close</button>
+      </div>
+      <p class="muted">Point any phone camera at this QR code to open and install TankGauge onto the home screen.</p>
+      <img src="./qr_tank_gauge.png" alt="TankGauge QR Code" class="qr-frame" />
+      <p style="font-size:0.82rem;word-break:break-all;"><strong>https://eric1ramaz-sys.github.io/tank-gauge/</strong></p>
+      <button type="button" class="btn btn-primary btn-block" id="btnCopyShareUrl">📋 Copy App Link</button>
+    </div>
+  </div>
+
+  <!-- ==================== TANK SIZE HELPER MODAL ==================== -->
+  <div id="tankHelperModal" class="modal-backdrop" hidden>
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h2 class="card-title">Help Me Find My Tank Size</h2>
+        <button type="button" class="btn btn-sm btn-secondary" data-close-modal="tankHelperModal">✕ Close</button>
+      </div>
+      <p class="muted">Use any past Calor delivery ticket where you remember roughly what the dial read before and after filling.</p>
+      <div class="field">
+        <label for="helpLitres">Litres Delivered on Ticket</label>
+        <input type="number" id="helpLitres" placeholder="e.g. 1000" />
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label for="helpPctBefore">Dial % Before</label>
+          <input type="number" id="helpPctBefore" placeholder="e.g. 25" />
+        </div>
+        <div class="field">
+          <label for="helpPctAfter">Dial % After</label>
+          <input type="number" id="helpPctAfter" placeholder="e.g. 75" />
+        </div>
+      </div>
+      <div id="tankHelperResult" class="alert-banner alert-ok" hidden></div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-secondary" id="btnCalcTankSize">Calculate Size</button>
+        <button type="button" class="btn btn-primary" id="btnApplyTankSize" hidden>Use This Tank Size</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PHOTO LIGHTBOX MODAL ==================== -->
+  <div id="photoModal" class="modal-backdrop" hidden>
+    <div class="modal-sheet" style="text-align:center;">
+      <div class="modal-head">
+        <h2 class="card-title" id="photoModalTitle">Saved Dial Photo</h2>
+        <button type="button" class="btn btn-sm btn-secondary" data-close-modal="photoModal">✕ Close</button>
+      </div>
+      <img id="photoModalImg" alt="Saved dial photo" style="width:100%;max-width:380px;border-radius:12px;" />
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="./engine.js"></script>
+  <script src="./vision.js"></script>
+  <script src="./weather.js"></script>
+  <script src="./charts.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
