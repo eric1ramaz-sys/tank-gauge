@@ -126,16 +126,16 @@ def write_manifest():
 
 
 def write_service_worker():
-    sw_code = """const CACHE_NAME = 'tank-gauge-v4';
+    sw_code = """const CACHE_NAME = 'tank-gauge-v5';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=4',
-  './engine.js?v=4',
-  './vision.js?v=4',
-  './weather.js?v=4',
-  './charts.js?v=4',
-  './app.js?v=4',
+  './styles.css?v=5',
+  './engine.js?v=5',
+  './vision.js?v=5',
+  './weather.js?v=5',
+  './charts.js?v=5',
+  './app.js?v=5',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

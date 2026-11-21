@@ -244,16 +244,26 @@
 
   function setOverlayUiMode(mode) {
     const isFit = mode === 'fit';
-    overlayCtrl.setMode(isFit ? 'fit' : 'needle');
+    const isMap = mode === 'map';
+    if (!isMap) overlayCtrl.setMode(isFit ? 'fit' : 'needle');
     $('btnModeFit').classList.toggle('active', isFit);
-    $('btnModeNeedle').classList.toggle('active', !isFit);
+    $('btnModeNeedle').classList.toggle('active', !isFit && !isMap);
     $('fitControlsBox').hidden = !isFit;
-    $('needleControlsBox').hidden = isFit;
-    $('confidenceBadge').hidden = isFit;
-    $('confirmCardTitle').textContent = isFit ? 'Fit Dial in Yellow Ring' : 'Confirm Needle Reading';
-    $('confirmStepHelper').innerHTML = isFit
-      ? 'Slide &amp; zoom the photo until the dial fills the yellow ring, then tap <strong>Read Needle Now</strong>.'
-      : 'Drag the glowing orange line onto your needle tip, or tap <strong>-0.5% / +0.5%</strong>.';
+    $('needleControlsBox').hidden = isFit || isMap;
+    $('mapDialBanner').hidden = !isMap;
+    $('confidenceBadge').hidden = isFit || isMap;
+    if (isMap) {
+      $('confirmCardTitle').textContent = 'Map Your Dial (3 Taps)';
+      $('confirmStepHelper').textContent = 'Tap the numbers 20, 50, then 80 printed on your dial.';
+    } else if (isFit) {
+      $('confirmCardTitle').textContent = 'Fit Dial in Yellow Ring';
+      $('confirmStepHelper').innerHTML =
+        'Slide &amp; zoom the photo until the dial fills the yellow ring, then tap <strong>Read Needle Now</strong>.';
+    } else {
+      $('confirmCardTitle').textContent = 'Confirm Needle Reading';
+      $('confirmStepHelper').innerHTML =
+        'Drag the glowing orange line onto your needle tip, or tap <strong>-0.5% / +0.5%</strong>.';
+    }
   }
 
   function updateConfidenceBadge(res) {
@@ -830,6 +840,90 @@
     const res = overlayCtrl.runAutoDetect();
     updateConfidenceBadge(res);
     if (res) showToast(`Auto needle scan: ${res.percent.toFixed(1)}%`);
+  });
+
+  async function runAiDialScan() {
+    if (!state.settings.geminiApiKey || !state.settings.geminiApiKey.trim()) {
+      syncSettingsModalFromState();
+      $('settingsModal').hidden = false;
+      setTimeout(() => $('setGeminiKey').focus(), 120);
+      showToast('Paste a free Google AI key in Settings to enable AI Auto-Read (or use offline 3-Tap Map).');
+      return;
+    }
+    const fitted = overlayCtrl.getFittedCanvas() || pendingSnapCanvas;
+    if (!fitted) return showToast('Snap or pick a dial photo first.');
+
+    const btnA = $('btnAiReadDial');
+    const btnB = $('btnAiReadDialFromFit');
+    const origA = btnA.textContent;
+    const origB = btnB.textContent;
+    btnA.disabled = true;
+    btnB.disabled = true;
+    btnA.textContent = '✨ Reading...';
+    btnB.textContent = '✨ Reading...';
+
+    try {
+      const dataUrl = TankVision.compressPhotoBlob(fitted, 512, 0.88);
+      const data = await TankVision.aiScanWithGemini(state.settings.geminiApiKey, dataUrl, 'dial');
+      if (!data || !Number.isFinite(Number(data.percent))) {
+        throw new Error('AI could not read a clear percentage from this photo.');
+      }
+      if (Number.isFinite(Number(data.fiftyClockDeg)) && Math.abs(Number(data.fiftyClockDeg)) > 6) {
+        state.settings.calibration.rotationDeg = TankEngine.roundTo(
+          TankEngine.normalizeAngle180(Number(data.fiftyClockDeg)),
+          1
+        );
+        saveState();
+        overlayCtrl.setCalibration(state.settings.calibration);
+      }
+      setOverlayUiMode('needle');
+      overlayCtrl.setPercent(Number(data.percent));
+      const badge = $('confidenceBadge');
+      badge.textContent = `✨ AI Read (${data.confidence || 'high'})`;
+      badge.className = 'status-pill badge-ok';
+      const seen = Array.isArray(data.scaleNumbersSeen) && data.scaleNumbersSeen.length
+        ? ` (numbers seen: ${data.scaleNumbersSeen.join(', ')})`
+        : '';
+      showToast(`AI read ${Number(data.percent).toFixed(1)}%${seen}`);
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      btnA.disabled = false;
+      btnB.disabled = false;
+      btnA.textContent = origA;
+      btnB.textContent = origB;
+    }
+  }
+
+  $('btnAiReadDial').addEventListener('click', runAiDialScan);
+  $('btnAiReadDialFromFit').addEventListener('click', runAiDialScan);
+
+  $('btnStartMapDial').addEventListener('click', () => {
+    setOverlayUiMode('map');
+    overlayCtrl.startThreeTapMap((info) => {
+      if (!info.done) {
+        $('mapDialPrompt').textContent = `Step ${info.stepIndex + 1} of 3: Tap the number ${info.targetLabel} on your dial`;
+        return;
+      }
+      const res = info.result;
+      if (!res || !res.ok) {
+        setOverlayUiMode('needle');
+        showToast((res && res.error) || 'Please tap 20, then 50, then 80 clockwise.');
+        return;
+      }
+      state.settings.calibration = res.calibration;
+      saveState();
+      overlayCtrl.setCalibration(res.calibration);
+      setOverlayUiMode('needle');
+      const det = overlayCtrl.runAutoDetect();
+      updateConfidenceBadge(det);
+      showToast('✅ Dial mapped & saved! Future photos will match automatically.');
+    });
+  });
+
+  $('btnCancelMapDial').addEventListener('click', () => {
+    overlayCtrl.cancelThreeTapMap();
+    setOverlayUiMode('needle');
   });
 
   $('btnNudgeDown').addEventListener('click', () => overlayCtrl.nudge(-0.5));

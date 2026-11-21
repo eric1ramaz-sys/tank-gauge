@@ -218,3 +218,39 @@ test('8. detectDialNeedleFromRGBA stays within +-2.0% on low-contrast shaded Cal
     );
   }
 });
+
+
+test('9. calibrateFromThreeMarks recovers rotated dials (+45 deg & -90 deg) and vision reads them within +-2.0%', () => {
+  const base = TankEngine.CONSTANTS.DIAL_PRESETS.rochester_5_95;
+  for (const rotDeg of [45, -90]) {
+    const trueCal = { ...base, rotationDeg: rotDeg };
+    const a20 = TankEngine.percentToAngleDeg(20, trueCal);
+    const a50 = TankEngine.percentToAngleDeg(50, trueCal);
+    const a80 = TankEngine.percentToAngleDeg(80, trueCal);
+
+    const res = TankEngine.calibrateFromThreeMarks(a20, a50, a80, base);
+    assert.equal(res.ok, true);
+    assert.ok(Math.abs(res.calibration.rotationDeg - rotDeg) <= 0.2);
+    assert.ok(Math.abs(res.calibration.startDeg - (-140)) <= 1.0);
+    assert.ok(Math.abs(res.calibration.endDeg - 140) <= 1.0);
+
+    const w = 360;
+    const h = 360;
+    for (const targetPct of [18, 48, 84]) {
+      const rgba = TankVision.renderSyntheticDialToRGBA(w, h, targetPct, res.calibration);
+      const det = TankVision.detectDialNeedleFromRGBA(rgba, w, h, w / 2, h / 2, 158, res.calibration);
+      assert.ok(
+        Math.abs(det.percent - targetPct) <= 2.0,
+        `Rotated ${rotDeg} deg dial ${targetPct}% detected as ${det.percent}%`
+      );
+    }
+  }
+});
+
+test('10. calibrateFromThreeMarks rejects out-of-order / counter-clockwise taps', () => {
+  const base = TankEngine.CONSTANTS.DIAL_PRESETS.rochester_5_95;
+  // Counter-clockwise order: 80, 50, 20
+  const bad = TankEngine.calibrateFromThreeMarks(93, 0, -93, base);
+  assert.equal(bad.ok, false);
+  assert.ok(bad.error.includes('clockwise'));
+});

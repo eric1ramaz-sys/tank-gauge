@@ -212,8 +212,9 @@
       rgba[idx + 3] = 255;
     }
 
-    const startRedDeg = TankEngine.percentToAngleDeg(cal.minPct, cal);
-    const endRedDeg = TankEngine.percentToAngleDeg(25, cal);
+    const startRedRel = cal.startDeg;
+    const endRedRel =
+      cal.startDeg + ((25 - cal.minPct) / Math.max(1, cal.maxPct - cal.minPct)) * (cal.endDeg - cal.startDeg);
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -239,9 +240,10 @@
 
           // Angle in degrees (0 at top, clockwise positive)
           const ang = (Math.atan2(dx, -dy) * 180) / Math.PI;
+          const relAng = TankEngine.normalizeAngle180(ang - cal.rotationDeg);
 
           // Red warning arc (< 25%) near outer band
-          if (dist >= R * 0.78 && dist <= R * 0.91 && ang >= startRedDeg && ang <= endRedDeg) {
+          if (dist >= R * 0.78 && dist <= R * 0.91 && relAng >= startRedRel && relAng <= endRedRel) {
             r = 220;
             g = 52;
             b = 45;
@@ -251,7 +253,7 @@
           if (dist >= R * 0.78 && dist <= R * 0.92) {
             for (let p = cal.minPct; p <= cal.maxPct; p += 5) {
               const tDeg = TankEngine.percentToAngleDeg(p, cal);
-              if (Math.abs(ang - tDeg) <= (p % 10 === 0 ? 1.1 : 0.6)) {
+              if (Math.abs(TankEngine.normalizeAngle180(ang - tDeg)) <= (p % 10 === 0 ? 1.1 : 0.6)) {
                 r = 28;
                 g = 34;
                 b = 42;
@@ -449,9 +451,12 @@
       this.panX = 0;
       this.panY = 0;
       this.photoRotDeg = 0;
-      this.mode = 'needle'; // 'fit' | 'needle'
+      this.mode = 'needle'; // 'fit' | 'needle' | 'map'
       this.percent = 50;
       this.angleDeg = 0;
+      this.MAP_STEPS = ['20', '50', '80'];
+      this.mapMarks = [];
+      this.onMapProgress = null;
       this._pointers = new Map();
       this._lastPanPos = null;
       this._pinchStartDist = 0;
@@ -474,6 +479,41 @@
         if (!this.sourceCanvas) return;
         evt.preventDefault();
         const pos = getPos(evt);
+
+        if (this.mode === 'map') {
+          const dx = pos.x - this.cx;
+          const dy = pos.y - this.cy;
+          if (Math.hypot(dx, dy) < 12) return;
+          const angleDeg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+          const label = this.MAP_STEPS[this.mapMarks.length] || '80';
+          this.mapMarks.push({ label, x: pos.x, y: pos.y, angleDeg });
+          this.render();
+
+          if (this.mapMarks.length < 3) {
+            if (this.onMapProgress) {
+              this.onMapProgress({
+                stepIndex: this.mapMarks.length,
+                targetLabel: this.MAP_STEPS[this.mapMarks.length],
+                done: false,
+              });
+            }
+          } else {
+            const marks = this.mapMarks.slice();
+            const result = TankEngine.calibrateFromThreeMarks(
+              marks[0].angleDeg,
+              marks[1].angleDeg,
+              marks[2].angleDeg,
+              this.calibration
+            );
+            this.mode = 'needle';
+            this.render();
+            if (this.onMapProgress) {
+              this.onMapProgress({ done: true, result });
+            }
+          }
+          return;
+        }
+
         this._pointers.set(evt.pointerId, pos);
 
         if (this.mode === 'fit') {
@@ -631,7 +671,23 @@
     }
 
     setMode(mode) {
-      this.mode = mode === 'fit' ? 'fit' : 'needle';
+      this.mode = mode === 'fit' ? 'fit' : mode === 'map' ? 'map' : 'needle';
+      this.render();
+    }
+
+    startThreeTapMap(onMapProgress) {
+      this.mode = 'map';
+      this.mapMarks = [];
+      this.onMapProgress = onMapProgress || null;
+      this.render();
+      if (this.onMapProgress) {
+        this.onMapProgress({ stepIndex: 0, targetLabel: this.MAP_STEPS[0], done: false });
+      }
+    }
+
+    cancelThreeTapMap() {
+      this.mode = 'needle';
+      this.mapMarks = [];
       this.render();
     }
 
@@ -730,6 +786,49 @@
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('50% TOP', this.cx, this.cy - this.radius - 8);
+        ctx.restore();
+        return;
+      }
+
+      if (this.mode === 'map') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.32)';
+        ctx.beginPath();
+        ctx.rect(0, 0, size, size);
+        ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2, true);
+        ctx.fill('evenodd');
+
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.arc(this.cx, this.cy, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        for (let i = 0; i < this.mapMarks.length; i++) {
+          const mk = this.mapMarks[i];
+          ctx.beginPath();
+          ctx.arc(mk.x, mk.y, 13, 0, Math.PI * 2);
+          ctx.fillStyle = '#0284c7';
+          ctx.fill();
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 11px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(mk.label, mk.x, mk.y);
+        }
         ctx.restore();
         return;
       }
@@ -932,10 +1031,15 @@
     const match = String(imageDataUrl || '').match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
     if (!match) throw new Error('Invalid image format for AI scan.');
 
-    const prompt =
-      scanType === 'meter'
-        ? 'Read the numeric digits on this UK LPG gas meter. Reply with valid JSON only: {"readingValue": number, "unit": "m3" or "ft3"}.'
-        : 'Extract UK Calor/LPG gas bill delivery figures. Reply with valid JSON only: {"litres": number or null, "totalPaid": number or null, "unitPricePence": number or null, "standingChargePencePerDay": number or null, "vatIncluded": boolean, "date": "YYYY-MM-DD" or null, "supplier": string or null}.';
+    let prompt =
+      'Extract UK Calor/LPG gas bill delivery figures. Reply with valid JSON only: {"litres": number or null, "totalPaid": number or null, "unitPricePence": number or null, "standingChargePencePerDay": number or null, "vatIncluded": boolean, "date": "YYYY-MM-DD" or null, "supplier": string or null}.';
+    if (scanType === 'meter') {
+      prompt =
+        'Read the numeric digits on this UK LPG gas meter. Reply with valid JSON only: {"readingValue": number, "unit": "m3" or "ft3"}.';
+    } else if (scanType === 'dial') {
+      prompt =
+        'Look at this Calor / LPG gas tank percentage dial. Read the printed numbers around the dial face (such as 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95), spot where the needle tip points (not the short counterweight tail), and estimate what clockwise angle in degrees from 12 o clock the 50% mark sits at (-180 to 180, 0 means 50 is straight up). Reply with valid JSON only: {"percent": number, "minMark": number or null, "maxMark": number or null, "fiftyClockDeg": number or null, "scaleNumbersSeen": [number], "confidence": "high" | "medium" | "low"}.';
+    }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
       apiKey.trim()

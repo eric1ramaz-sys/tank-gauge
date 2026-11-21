@@ -110,6 +110,49 @@
     return roundTo(normalizeAngle180(rel + cal.rotationDeg), 2);
   }
 
+  function cwStepDeg(fromDeg, toDeg) {
+    return (((Number(toDeg) - Number(fromDeg)) % 360) + 360) % 360;
+  }
+
+  function calibrateFromThreeMarks(angle20Deg, angle50Deg, angle80Deg, baseCalibration) {
+    const base = resolveCalibration(baseCalibration);
+    const spanLow = cwStepDeg(angle20Deg, angle50Deg);
+    const spanHigh = cwStepDeg(angle50Deg, angle80Deg);
+
+    if (
+      !Number.isFinite(spanLow) ||
+      !Number.isFinite(spanHigh) ||
+      spanLow < 35 ||
+      spanLow > 155 ||
+      spanHigh < 35 ||
+      spanHigh > 155 ||
+      Math.abs(spanLow - spanHigh) > 45
+    ) {
+      return {
+        ok: false,
+        error: 'Please tap 20, then 50, then 80 going clockwise around the dial.',
+      };
+    }
+
+    const degPerPct = (spanLow + spanHigh) / 60;
+    const rotationDeg = roundTo(normalizeAngle180(angle50Deg), 1);
+    const startDeg = roundTo(clamp(-(50 - base.minPct) * degPerPct, -170, -70), 1);
+    const endDeg = roundTo(clamp((base.maxPct - 50) * degPerPct, 70, 170), 1);
+
+    return {
+      ok: true,
+      calibration: {
+        presetId: 'custom',
+        minPct: base.minPct,
+        maxPct: base.maxPct,
+        startDeg,
+        endDeg,
+        rotationDeg,
+      },
+      degPerPct: roundTo(degPerPct, 2),
+    };
+  }
+
   function estimateTankCapacity(litresDelivered, pctBefore, pctAfter) {
     const litres = Number(litresDelivered);
     const before = Number(pctBefore);
@@ -996,6 +1039,7 @@
     resolveCalibration,
     angleDegToPercent,
     percentToAngleDeg,
+    calibrateFromThreeMarks,
     estimateTankCapacity,
     convertToLitresEquivalent,
     normalizeBill,
